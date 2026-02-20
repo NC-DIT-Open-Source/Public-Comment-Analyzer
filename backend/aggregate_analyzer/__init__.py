@@ -1,0 +1,1 @@
+"""Aggregate analyzer Lambda function."""
