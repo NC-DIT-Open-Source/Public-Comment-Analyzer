@@ -1,0 +1,57 @@
+<div class="results-viewer-container">
+  <div class="loading-state" *ngIf="isLoading">
+    <mat-spinner></mat-spinner>
+    <p>Loading your results...</p>
+  </div>
+
+  <div class="error-state" *ngIf="error && !isLoading">
+    <mat-card class="error-card">
+      <mat-icon>error_outline</mat-icon>
+      <h3>Error Loading Results</h3>
+      <p>{{ error }}</p>
+      <button mat-raised-button color="primary" (click)="loadResults()">
+        <mat-icon>refresh</mat-icon>
+        Retry
+      </button>
+    </mat-card>
+  </div>
+
+  <div class="results-content" *ngIf="results && !isLoading">
+    <mat-card class="download-card">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>download</mat-icon>
+          Download Processed File
+        </mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>Your analyzed file is ready. Download it to view the original data with AI-generated analysis columns.</p>
+        <button mat-raised-button color="primary" (click)="downloadFile()">
+          <mat-icon>file_download</mat-icon>
+          Download File
+        </button>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="analysis-card">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>analytics</mat-icon>
+          Aggregate Analysis
+        </mat-card-title>
+        <button mat-icon-button (click)="copyAnalysis()" matTooltip="Copy to clipboard">
+          <mat-icon>content_copy</mat-icon>
+        </button>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="analysis-text" [innerHTML]="renderedAnalysis"></div>
+      </mat-card-content>
+      <mat-card-actions>
+        <button mat-button (click)="copyAnalysis()">
+          <mat-icon>content_copy</mat-icon>
+          Copy Analysis
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  </div>
+</div>

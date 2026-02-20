@@ -1,0 +1,73 @@
+/* Digital Commons Style Guide - Global Styles */
+
+// Import Design System
+@import 'styles/variables';
+@import 'styles/typography';
+@import 'styles/components';
+
+// ============================================
+// Global Resets
+// ============================================
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// ============================================
+// Utility Classes
+// ============================================
+
+.container {
+  max-width: $max-width-content;
+  margin: 0 auto;
+  padding: 0 $spacing-lg;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-primary {
+  color: $color-primary;
+}
+
+.text-secondary {
+  color: $color-secondary;
+}
+
+.bg-primary {
+  background-color: $color-primary;
+  color: $color-white;
+}
+
+.bg-secondary-light {
+  background-color: $color-secondary-light;
+  color: $color-primary;
+}
+
+.mt-sm { margin-top: $spacing-sm; }
+.mt-md { margin-top: $spacing-md; }
+.mt-lg { margin-top: $spacing-lg; }
+.mt-xl { margin-top: $spacing-xl; }
+
+.mb-sm { margin-bottom: $spacing-sm; }
+.mb-md { margin-bottom: $spacing-md; }
+.mb-lg { margin-bottom: $spacing-lg; }
+.mb-xl { margin-bottom: $spacing-xl; }
+
+.p-sm { padding: $spacing-sm; }
+.p-md { padding: $spacing-md; }
+.p-lg { padding: $spacing-lg; }
+.p-xl { padding: $spacing-xl; }

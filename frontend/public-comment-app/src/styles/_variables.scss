@@ -1,0 +1,99 @@
+// Digital Commons Style Guide - Design System Variables
+// Based on NC DIT Design System
+
+// ============================================
+// Color Palette - First in Flight (Primary)
+// ============================================
+
+// Primary Colors
+$color-primary: #092940;
+$color-primary-rgb: rgb(9, 41, 64);
+
+// Secondary Colors
+$color-secondary-light: #EEF7FF;
+$color-secondary-light-rgb: rgb(238, 247, 255);
+$color-secondary: #3892E1; // Use with dark text
+$color-secondary-rgb: rgb(56, 146, 225);
+$color-secondary-dark-text: #1E79C8; // Use with white text
+$color-secondary-dark-text-rgb: rgb(30, 121, 200);
+$color-secondary-dark: #3B75A9;
+$color-secondary-dark-rgb: rgb(59, 117, 169);
+
+// Notification Colors
+$color-info: #3D7AAF;
+$color-success: #008945;
+$color-warning: #C65200;
+$color-error: #BC2442;
+
+// Neutral Colors
+$color-white: #FFFFFF;
+$color-black: #000000;
+$color-gray-light: #F5F5F5;
+$color-gray: #CCCCCC;
+$color-gray-dark: #666666;
+
+// ============================================
+// Typography
+// ============================================
+
+// Font Family
+$font-family-primary: 'Source Sans Pro', 'Helvetica Neue', sans-serif;
+
+// Font Weights
+$font-weight-regular: 400;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+// Font Sizes (rem)
+$font-size-h1: 2.625rem; // 42px
+$font-size-h2: 2.25rem;  // 36px
+$font-size-h3: 1.75rem;  // 28px
+$font-size-h4: 1.5rem;   // 24px
+$font-size-h5: 1.3125rem; // 21px
+$font-size-h6: 1.125rem; // 18px
+$font-size-body: 1.125rem; // 18px
+$font-size-breadcrumb: 1.0437rem; // 16.7px
+
+// Line Heights (rem)
+$line-height-h1: 3.15rem;    // 50.4px
+$line-height-h2: 2.7rem;     // 43.2px
+$line-height-h3: 2.1rem;     // 33.6px
+$line-height-h4: 1.8rem;     // 28.8px
+$line-height-h5: 1.575rem;   // 25.2px
+$line-height-h6: 1.3188rem;  // 21.1px
+$line-height-body: 1.875rem; // 30px
+
+// ============================================
+// Spacing
+// ============================================
+
+$spacing-xs: 0.25rem;  // 4px
+$spacing-sm: 0.5rem;   // 8px
+$spacing-md: 1rem;     // 16px
+$spacing-lg: 1.5rem;   // 24px
+$spacing-xl: 2rem;     // 32px
+$spacing-xxl: 3rem;    // 48px
+
+// ============================================
+// Layout
+// ============================================
+
+$max-width-content: 1200px;
+$border-radius: 4px;
+$border-radius-lg: 8px;
+
+// ============================================
+// Shadows
+// ============================================
+
+$shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
+$shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
+$shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.15);
+
+// ============================================
+// Transitions
+// ============================================
+
+$transition-fast: 150ms ease-in-out;
+$transition-normal: 250ms ease-in-out;
+$transition-slow: 350ms ease-in-out;

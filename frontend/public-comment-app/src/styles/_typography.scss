@@ -1,0 +1,110 @@
+// Digital Commons Style Guide - Typography Styles
+@import 'variables';
+
+// Import Source Sans Pro from Google Fonts
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+// ============================================
+// Base Typography
+// ============================================
+
+body {
+  font-family: $font-family-primary;
+  font-size: $font-size-body;
+  font-weight: $font-weight-regular;
+  line-height: $line-height-body;
+  color: $color-primary;
+}
+
+// ============================================
+// Headings
+// ============================================
+
+h1, .h1 {
+  font-size: $font-size-h1;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-h1;
+  letter-spacing: 0;
+  margin: 0 0 $spacing-lg 0;
+}
+
+h2, .h2 {
+  font-size: $font-size-h2;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-h2;
+  letter-spacing: 0.4px;
+  margin: 0 0 $spacing-md 0;
+}
+
+h3, .h3 {
+  font-size: $font-size-h3;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-h3;
+  letter-spacing: 0;
+  margin: 0 0 $spacing-md 0;
+}
+
+h4, .h4 {
+  font-size: $font-size-h4;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-h4;
+  letter-spacing: 0;
+  margin: 0 0 $spacing-sm 0;
+}
+
+h5, .h5 {
+  font-size: $font-size-h5;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-h5;
+  letter-spacing: 0;
+  margin: 0 0 $spacing-sm 0;
+}
+
+h6, .h6 {
+  font-size: $font-size-h6;
+  font-weight: $font-weight-bold;
+  line-height: $line-height-h6;
+  letter-spacing: 0;
+  margin: 0 0 $spacing-sm 0;
+}
+
+// ============================================
+// Body Text Variants
+// ============================================
+
+p {
+  margin: 0 0 $spacing-md 0;
+}
+
+.body-bold {
+  font-weight: $font-weight-bold;
+}
+
+.body-semibold {
+  font-weight: $font-weight-semibold;
+}
+
+.body-italic {
+  font-style: italic;
+}
+
+// ============================================
+// Special Text Styles
+// ============================================
+
+.breadcrumb-text {
+  font-size: $font-size-breadcrumb;
+  font-weight: $font-weight-regular;
+  line-height: $line-height-body;
+  letter-spacing: 0.2px;
+}
+
+.pull-quote {
+  font-size: $font-size-body;
+  font-weight: $font-weight-regular;
+  line-height: $line-height-body;
+  font-style: italic;
+  border-left: 4px solid $color-secondary;
+  padding-left: $spacing-lg;
+  margin: $spacing-lg 0;
+}

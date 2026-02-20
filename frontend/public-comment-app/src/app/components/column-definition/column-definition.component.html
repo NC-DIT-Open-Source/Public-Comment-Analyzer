@@ -1,0 +1,93 @@
+<div class="column-definition-container">
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Define Analysis Columns</mat-card-title>
+      <mat-card-subtitle *ngIf="fileMetadata">
+        File: {{ fileName }} ({{ fileMetadata.rowCount }} rows, {{ fileMetadata.columns.length }} columns)
+      </mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      <p class="instructions">Add custom columns to analyze your comments. Each column requires a name and instructions for the AI.</p>
+
+      <form [formGroup]="columnForm" (ngSubmit)="addColumn()" class="column-form">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Column Name</mat-label>
+          <input matInput formControlName="name" placeholder="e.g., Sentiment, Category, Rating">
+          <mat-error *ngIf="columnForm.get('name')?.hasError('required')">
+            Column name is required
+          </mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Analysis Instructions</mat-label>
+          <textarea 
+            matInput 
+            formControlName="instructions" 
+            rows="3"
+            placeholder="e.g., Categorize this comment as 'pro', 'against', or 'neutral'">
+          </textarea>
+          <mat-error *ngIf="columnForm.get('instructions')?.hasError('required')">
+            Instructions are required
+          </mat-error>
+        </mat-form-field>
+
+        <div class="button-group">
+          <button mat-raised-button color="primary" type="submit" [disabled]="!columnForm.valid">
+            {{ isEditing ? 'Update Column' : 'Add Column' }}
+          </button>
+          <button mat-button type="button" *ngIf="isEditing" (click)="cancelEdit()">
+            Cancel
+          </button>
+        </div>
+      </form>
+
+      <div class="columns-list" *ngIf="columns.length > 0">
+        <h3>Defined Columns ({{ columns.length }})</h3>
+        <mat-chip-listbox class="column-chips">
+          <mat-chip-option *ngFor="let column of columns; let i = index" class="column-chip">
+            <div class="chip-content">
+              <div class="chip-header">
+                <strong>{{ column.name }}</strong>
+                <div class="chip-actions">
+                  <button mat-icon-button (click)="editColumn(i)" aria-label="Edit column">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="removeColumn(i)" aria-label="Remove column">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+              </div>
+              <div class="chip-instructions">{{ column.instructions }}</div>
+            </div>
+          </mat-chip-option>
+        </mat-chip-listbox>
+      </div>
+
+      <div class="empty-state" *ngIf="columns.length === 0">
+        <mat-icon>info</mat-icon>
+        <p>No columns defined yet. Add your first analysis column above.</p>
+      </div>
+
+      <div class="error-message" *ngIf="errorMessage">
+        <mat-icon>error</mat-icon>
+        <span>{{ errorMessage }}</span>
+      </div>
+    </mat-card-content>
+
+    <mat-card-actions>
+      <button 
+        mat-raised-button 
+        color="accent" 
+        (click)="startProcessing()" 
+        [disabled]="columns.length === 0 || isProcessing">
+        <mat-icon>play_arrow</mat-icon>
+        {{ isProcessing ? 'Starting...' : 'Start Processing' }}
+      </button>
+      <button mat-button routerLink="/upload">
+        <mat-icon>arrow_back</mat-icon>
+        Back to Upload
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</div>

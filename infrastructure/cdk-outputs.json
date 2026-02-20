@@ -1,0 +1,11 @@
+{
+  "PublicCommentAnalyzerStack-dev": {
+    "ApiUrl": "https://emu57xwa0c.execute-api.us-east-1.amazonaws.com/dev/",
+    "CloudFrontUrl": "https://dwah8ht95yiuz.cloudfront.net",
+    "DataBucketName": "public-comment-analyzer-data-dev-267527030320",
+    "PublicCommentAnalyzerAPIEndpointA5AF84A1": "https://emu57xwa0c.execute-api.us-east-1.amazonaws.com/dev/",
+    "FrontendBucketName": "public-comment-analyzer-frontend-dev-267527030320",
+    "CloudFrontDistributionId": "E3C3HXNESHQKVB",
+    "JobsTableName": "PublicCommentAnalyzer-Jobs-dev"
+  }
+}
