@@ -1,0 +1,91 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+*.dist-info/
+
+# Lambda dependencies (installed in function directories)
+backend/*/boto3/
+backend/*/boto3-*/
+backend/*/botocore/
+backend/*/botocore-*/
+backend/*/chardet/
+backend/*/chardet-*/
+backend/*/dateutil/
+backend/*/et_xmlfile/
+backend/*/et_xmlfile-*/
+backend/*/jmespath/
+backend/*/jmespath-*/
+backend/*/openpyxl/
+backend/*/openpyxl-*/
+backend/*/s3transfer/
+backend/*/s3transfer-*/
+backend/*/six.py
+backend/*/six-*/
+backend/*/urllib3/
+backend/*/urllib3-*/
+backend/*/certifi/
+backend/*/certifi-*/
+backend/*/python_dateutil-*/
+backend/*/bin/
+
+# CDK
+cdk.out/
+.cdk.staging/
+cdk.context.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Angular
+frontend/public-comment-app/dist/
+frontend/public-comment-app/.angular/
+frontend/public-comment-app/coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.production
+*.pem
+
+# AWS
+.aws-sam/
+samconfig.toml

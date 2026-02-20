@@ -1,0 +1,1 @@
+"""Row processor Lambda function."""
