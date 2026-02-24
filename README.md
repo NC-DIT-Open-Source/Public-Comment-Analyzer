@@ -6,6 +6,8 @@ A cloud-native AWS application that processes CSV and XLSX files containing publ
 
 ## Quick Start
 
+**Note:** GitHub Actions CI/CD is now configured! Every push to `main` automatically deploys changes to AWS.
+
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
