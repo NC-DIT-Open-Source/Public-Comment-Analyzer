@@ -134,18 +134,16 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
             --output text)
           
-          CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
+          CLOUDFRONT_DIST_ID=$(aws cloudformation describe-stacks \
             --stack-name PublicCommentAnalyzerStack-${{ env.ENVIRONMENT }} \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
             --output text)
           
-          CLOUDFRONT_DIST=$(echo $CLOUDFRONT_URL | sed 's/https:\/\///' | sed 's/\/.*//')
-          
           echo "frontend-bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-          echo "cloudfront-dist=$CLOUDFRONT_DIST" >> $GITHUB_OUTPUT
+          echo "cloudfront-dist=$CLOUDFRONT_DIST_ID" >> $GITHUB_OUTPUT
           
           echo "Frontend Bucket: $FRONTEND_BUCKET"
-          echo "CloudFront Distribution: $CLOUDFRONT_DIST"
+          echo "CloudFront Distribution ID: $CLOUDFRONT_DIST_ID"
 
   deploy-frontend:
     name: Deploy Frontend
@@ -190,15 +188,13 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
             --output text)
           
-          CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
+          CLOUDFRONT_DIST_ID=$(aws cloudformation describe-stacks \
             --stack-name PublicCommentAnalyzerStack-${{ env.ENVIRONMENT }} \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
             --output text)
           
-          CLOUDFRONT_DIST=$(echo $CLOUDFRONT_URL | sed 's/https:\/\///' | sed 's/\/.*//')
-          
           echo "frontend-bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-          echo "cloudfront-dist=$CLOUDFRONT_DIST" >> $GITHUB_OUTPUT
+          echo "cloudfront-dist=$CLOUDFRONT_DIST_ID" >> $GITHUB_OUTPUT
 
       - name: Deploy to S3
         working-directory: frontend/public-comment-app
