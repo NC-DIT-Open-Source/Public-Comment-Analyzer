@@ -1,0 +1,290 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+      infrastructure: ${{ steps.changes.outputs.infrastructure }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "backend=true" >> $GITHUB_OUTPUT
+            echo "frontend=true" >> $GITHUB_OUTPUT
+            echo "infrastructure=true" >> $GITHUB_OUTPUT
+          else
+            # Check for changes in specific directories
+            git diff --name-only HEAD^ HEAD > changed_files.txt
+            
+            if grep -qE '^backend/|^infrastructure/' changed_files.txt; then
+              echo "backend=true" >> $GITHUB_OUTPUT
+            else
+              echo "backend=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if grep -qE '^frontend/' changed_files.txt; then
+              echo "frontend=true" >> $GITHUB_OUTPUT
+            else
+              echo "frontend=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if grep -qE '^infrastructure/' changed_files.txt; then
+              echo "infrastructure=true" >> $GITHUB_OUTPUT
+            else
+              echo "infrastructure=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+          
+          cat $GITHUB_OUTPUT
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.infrastructure == 'true'
+    outputs:
+      frontend-bucket: ${{ steps.get-outputs.outputs.frontend-bucket }}
+      cloudfront-dist: ${{ steps.get-outputs.outputs.cloudfront-dist }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Node.js (for CDK)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install AWS CDK
+        run: npm install -g aws-cdk
+
+      - name: Copy shared modules to Lambda functions
+        run: |
+          for lambda_dir in backend/upload_handler backend/row_processor backend/aggregate_analyzer; do
+            if [ -f "$lambda_dir/copy_shared.sh" ]; then
+              echo "Copying shared modules to $lambda_dir"
+              cd "$lambda_dir"
+              bash copy_shared.sh
+              cd ../..
+            fi
+          done
+
+      - name: Deploy CDK stack
+        working-directory: infrastructure
+        run: |
+          cdk deploy \
+            --context environment=${{ env.ENVIRONMENT }} \
+            --require-approval never \
+            --outputs-file outputs.json
+
+      - name: Get stack outputs
+        id: get-outputs
+        working-directory: infrastructure
+        run: |
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name PublicCommentAnalyzerStack-${{ env.ENVIRONMENT }} \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text)
+          
+          CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
+            --stack-name PublicCommentAnalyzerStack-${{ env.ENVIRONMENT }} \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
+            --output text)
+          
+          CLOUDFRONT_DIST=$(echo $CLOUDFRONT_URL | sed 's/https:\/\///' | sed 's/\/.*//')
+          
+          echo "frontend-bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "cloudfront-dist=$CLOUDFRONT_DIST" >> $GITHUB_OUTPUT
+          
+          echo "Frontend Bucket: $FRONTEND_BUCKET"
+          echo "CloudFront Distribution: $CLOUDFRONT_DIST"
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy-infrastructure]
+    if: |
+      always() && 
+      needs.detect-changes.outputs.frontend == 'true' &&
+      (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/public-comment-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/public-comment-app
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend/public-comment-app
+        run: npm run build:prod
+
+      - name: Get stack outputs (if infrastructure wasn't deployed)
+        id: get-outputs
+        if: needs.deploy-infrastructure.result == 'skipped'
+        run: |
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name PublicCommentAnalyzerStack-${{ env.ENVIRONMENT }} \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text)
+          
+          CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
+            --stack-name PublicCommentAnalyzerStack-${{ env.ENVIRONMENT }} \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontUrl'].OutputValue" \
+            --output text)
+          
+          CLOUDFRONT_DIST=$(echo $CLOUDFRONT_URL | sed 's/https:\/\///' | sed 's/\/.*//')
+          
+          echo "frontend-bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "cloudfront-dist=$CLOUDFRONT_DIST" >> $GITHUB_OUTPUT
+
+      - name: Deploy to S3
+        working-directory: frontend/public-comment-app
+        env:
+          FRONTEND_BUCKET: ${{ needs.deploy-infrastructure.outputs.frontend-bucket || steps.get-outputs.outputs.frontend-bucket }}
+        run: |
+          aws s3 sync dist/public-comment-app/ s3://$FRONTEND_BUCKET/ --delete
+
+      - name: Invalidate CloudFront cache
+        env:
+          CLOUDFRONT_DIST: ${{ needs.deploy-infrastructure.outputs.cloudfront-dist || steps.get-outputs.outputs.cloudfront-dist }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id $CLOUDFRONT_DIST \
+            --paths "/*"
+
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies and run tests
+        run: |
+          # Test shared modules
+          cd backend/shared
+          pip install -r requirements.txt
+          python -m pytest -v
+          cd ../..
+          
+          # Test each Lambda function
+          for lambda_dir in backend/upload_handler backend/row_processor backend/aggregate_analyzer; do
+            echo "Testing $lambda_dir"
+            cd "$lambda_dir"
+            bash copy_shared.sh
+            pip install -r requirements.txt
+            python -m pytest -v || true
+            cd ../..
+          done
+
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/public-comment-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/public-comment-app
+        run: npm ci
+
+      - name: Run tests
+        working-directory: frontend/public-comment-app
+        run: npm test -- --watch=false --browsers=ChromeHeadless
+
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy-infrastructure, deploy-frontend]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ env.ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend Changed:** ${{ needs.detect-changes.outputs.backend }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend Changed:** ${{ needs.detect-changes.outputs.frontend }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Infrastructure Changed:** ${{ needs.detect-changes.outputs.infrastructure }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Infrastructure Deployment:** ${{ needs.deploy-infrastructure.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend Deployment:** ${{ needs.deploy-frontend.result }}" >> $GITHUB_STEP_SUMMARY

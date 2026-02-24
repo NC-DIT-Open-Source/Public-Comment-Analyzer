@@ -135,14 +135,39 @@ npm start  # Runs on http://localhost:4200
 
 ## Deployment
 
-### Infrastructure Only
+### Automated Deployment (GitHub Actions)
+
+The project includes automated CI/CD via GitHub Actions. Every push to `main` automatically deploys changes to AWS.
+
+**Setup:**
+```bash
+# Configure GitHub secrets with your AWS credentials
+./scripts/setup-github-actions.sh
+```
+
+**Features:**
+- Smart change detection (only deploys what changed)
+- Automatic testing before deployment
+- Separate jobs for backend and frontend
+- Manual deployment option via GitHub UI
+
+See `.github/workflows/README.md` for detailed setup instructions.
+
+### Manual Deployment
+
+#### Full Deployment
+```bash
+./scripts/deploy.sh dev
+```
+
+#### Infrastructure Only
 ```bash
 cd infrastructure
 source .venv/bin/activate
 cdk deploy --context environment=dev --profile $AWS_PROFILE
 ```
 
-### Frontend Only
+#### Frontend Only
 ```bash
 cd frontend/public-comment-app
 npm run build:prod
