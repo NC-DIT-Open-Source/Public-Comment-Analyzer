@@ -198,7 +198,8 @@ class PublicCommentAnalyzerStack(Stack):
                 effect=iam.Effect.ALLOW,
                 actions=["lambda:InvokeFunction"],
                 resources=[
-                    f"arn:aws:lambda:{self.region}:{self.account}:function:PublicCommentAnalyzer-RowProcessor-*"
+                    f"arn:aws:lambda:{self.region}:{self.account}:function:PublicCommentAnalyzer-RowProcessor-*",
+                    f"arn:aws:lambda:{self.region}:{self.account}:function:PublicCommentAnalyzer-AggregateAnalyzer-*"
                 ]
             )
         )
