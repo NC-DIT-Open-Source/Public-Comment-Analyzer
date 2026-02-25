@@ -201,7 +201,7 @@ jobs:
         env:
           FRONTEND_BUCKET: ${{ needs.deploy-infrastructure.outputs.frontend-bucket || steps.get-outputs.outputs.frontend-bucket }}
         run: |
-          aws s3 sync dist/public-comment-app/ s3://$FRONTEND_BUCKET/ --delete
+          aws s3 sync dist/public-comment-app/browser/ s3://$FRONTEND_BUCKET/ --delete
 
       - name: Invalidate CloudFront cache
         env:
