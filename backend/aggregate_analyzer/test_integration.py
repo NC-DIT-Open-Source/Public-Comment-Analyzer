@@ -119,7 +119,7 @@ Quantitative Summary:
         mock_get_bedrock.return_value = mock_bedrock_client
         
         # Execute handler
-        event = {'pathParameters': {'jobId': 'test-job-123'}}
+        event = {'pathParameters': {'jobId': 'test-job-123'}, 'asyncAnalysis': True}
         response = handler.lambda_handler(event, None)
         
         # Verify response

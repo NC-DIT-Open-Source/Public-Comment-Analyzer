@@ -177,7 +177,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     print("=== UPLOAD HANDLER START ===")
     print(f"Event keys: {list(event.keys())}")
-    print(f"Request ID: {context.aws_request_id}")
+    print(f"Request ID: {getattr(context, 'aws_request_id', 'N/A')}")
     
     try:
         # Extract content type and body
