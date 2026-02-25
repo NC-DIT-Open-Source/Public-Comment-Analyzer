@@ -219,7 +219,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.backend == 'true'
-    continue-on-error: true  # Don't fail the workflow if tests fail
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -229,30 +228,42 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies and run tests
+      - name: Install shared dependencies
+        working-directory: backend/shared
         run: |
-          # Test shared modules
-          cd backend/shared
+          pip install pytest
+          pip install -r requirements.txt
+
+      - name: Test shared modules
+        working-directory: backend/shared
+        run: python -m pytest -v
+
+      - name: Test upload_handler
+        working-directory: backend/upload_handler
+        run: |
+          bash copy_shared.sh
           pip install -r requirements.txt
           python -m pytest -v
-          cd ../..
-          
-          # Test each Lambda function
-          for lambda_dir in backend/upload_handler backend/row_processor backend/aggregate_analyzer; do
-            echo "Testing $lambda_dir"
-            cd "$lambda_dir"
-            bash copy_shared.sh
-            pip install -r requirements.txt
-            python -m pytest -v || true
-            cd ../..
-          done
+
+      - name: Test row_processor
+        working-directory: backend/row_processor
+        run: |
+          bash copy_shared.sh
+          pip install -r requirements.txt
+          python -m pytest -v
+
+      - name: Test aggregate_analyzer
+        working-directory: backend/aggregate_analyzer
+        run: |
+          bash copy_shared.sh
+          pip install -r requirements.txt
+          python -m pytest -v
 
   test-frontend:
     name: Test Frontend
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend == 'true'
-    continue-on-error: true  # Don't fail the workflow if tests fail
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

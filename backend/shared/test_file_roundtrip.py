@@ -4,8 +4,8 @@ import os
 import tempfile
 import pytest
 
-from backend.shared.file_parser import FileParser
-from backend.shared.file_writer import FileWriter
+from file_parser import FileParser
+from file_writer import FileWriter
 
 
 class TestFileRoundtrip:
