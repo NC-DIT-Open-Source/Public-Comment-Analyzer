@@ -122,6 +122,9 @@ jobs:
         run: |
           cdk deploy \
             --context environment=${{ env.ENVIRONMENT }} \
+            --context domain_name=commentreviewer.oaip.nc.gov \
+            --context certificate_arn=arn:aws:acm:us-east-1:267527030320:certificate/7716fd46-be8f-42cf-834c-783b9d7e58d9 \
+            --context allowed_origin=https://commentreviewer.oaip.nc.gov \
             --require-approval never \
             --outputs-file outputs.json
 
