@@ -6,7 +6,7 @@ import csv
 from openpyxl import load_workbook
 import pytest
 
-from backend.shared.file_writer import FileWriter
+from file_writer import FileWriter
 
 
 class TestFileWriter:
