@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import uuid
 from unittest.mock import Mock, patch, MagicMock
 import sys
 
@@ -47,7 +48,7 @@ class TestRowProcessorHandler(unittest.TestCase):
         """Test that missing analysisColumns returns 400 error."""
         event = {
             'body': json.dumps({
-                'fileId': 'test-file-id'
+                'fileId': str(uuid.uuid4())  # Valid UUID
             })
         }
         
@@ -61,7 +62,7 @@ class TestRowProcessorHandler(unittest.TestCase):
         """Test that analysis column without name returns 400 error."""
         event = {
             'body': json.dumps({
-                'fileId': 'test-file-id',
+                'fileId': str(uuid.uuid4()),  # Valid UUID
                 'analysisColumns': [
                     {'instructions': 'Categorize the comment'}
                 ]
@@ -78,7 +79,7 @@ class TestRowProcessorHandler(unittest.TestCase):
         """Test that analysis column without instructions returns 400 error."""
         event = {
             'body': json.dumps({
-                'fileId': 'test-file-id',
+                'fileId': str(uuid.uuid4()),  # Valid UUID
                 'analysisColumns': [
                     {'name': 'category'}
                 ]
@@ -129,7 +130,8 @@ class TestRowProcessorHandler(unittest.TestCase):
         # Verify Bedrock was called
         mock_bedrock.invoke_model.assert_called_once()
         call_args = mock_bedrock.invoke_model.call_args
-        self.assertIn('anthropic.claude-3-haiku', call_args[1]['modelId'])
+        # Check for the new cross-region model ID
+        self.assertIn('claude-haiku', call_args[1]['modelId'])
     
     @patch('handler._get_bedrock_runtime')
     def test_process_single_row_retry_on_failure(self, mock_get_bedrock):
