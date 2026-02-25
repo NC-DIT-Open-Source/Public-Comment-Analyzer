@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { RouterTestingModule } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
 import { ResultsViewerComponent } from './results-viewer.component';
 import { ResultsService, ResultsResponse } from '../../services/results.service';
@@ -18,7 +19,8 @@ describe('ResultsViewerComponent', () => {
     await TestBed.configureTestingModule({
       imports: [
         ResultsViewerComponent,
-        BrowserAnimationsModule
+        BrowserAnimationsModule,
+        RouterTestingModule
       ],
       providers: [
         { provide: ResultsService, useValue: mockResultsService },
@@ -181,7 +183,16 @@ describe('ResultsViewerComponent', () => {
       expect(compiled.textContent).toContain('Loading your results...');
     });
 
-    it('should display error state', () => {
+    it('should display error state', fakeAsync(() => {
+      // Mock getResults to prevent unhandled calls
+      mockResultsService.getResults.and.returnValue(
+        throwError(() => new Error('any error'))
+      );
+      spyOn(console, 'error');
+      component.jobId = 'test-job';
+      fixture.detectChanges(); // triggers ngOnInit -> loadResults -> error
+      tick();
+      // Now override with our specific test error
       component.error = 'Test error message';
       component.isLoading = false;
       fixture.detectChanges();
@@ -189,7 +200,7 @@ describe('ResultsViewerComponent', () => {
       const compiled = fixture.nativeElement;
       expect(compiled.textContent).toContain('Error Loading Results');
       expect(compiled.textContent).toContain('Test error message');
-    });
+    }));
 
     it('should display results when loaded', fakeAsync(() => {
       const mockResponse: ResultsResponse = {
@@ -201,6 +212,9 @@ describe('ResultsViewerComponent', () => {
       component.jobId = 'test-job';
       component.ngOnInit();
       tick();
+      // Wait for the async marked.parse Promise to resolve
+      fixture.detectChanges();
+      tick();
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement;
@@ -210,4 +224,3 @@ describe('ResultsViewerComponent', () => {
     }));
   });
 });
-

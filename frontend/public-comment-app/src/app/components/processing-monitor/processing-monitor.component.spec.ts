@@ -1,24 +1,30 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { RouterTestingModule } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
 import { ProcessingMonitorComponent } from './processing-monitor.component';
 import { ProcessingService, JobStatus } from '../../services/processing.service';
+import { ResultsService } from '../../services/results.service';
 
 describe('ProcessingMonitorComponent', () => {
   let component: ProcessingMonitorComponent;
   let fixture: ComponentFixture<ProcessingMonitorComponent>;
   let mockProcessingService: jasmine.SpyObj<ProcessingService>;
+  let mockResultsService: jasmine.SpyObj<ResultsService>;
 
   beforeEach(async () => {
     mockProcessingService = jasmine.createSpyObj('ProcessingService', ['pollStatus']);
+    mockResultsService = jasmine.createSpyObj('ResultsService', ['getResults']);
 
     await TestBed.configureTestingModule({
       imports: [
         ProcessingMonitorComponent,
-        BrowserAnimationsModule
+        BrowserAnimationsModule,
+        RouterTestingModule
       ],
       providers: [
-        { provide: ProcessingService, useValue: mockProcessingService }
+        { provide: ProcessingService, useValue: mockProcessingService },
+        { provide: ResultsService, useValue: mockResultsService }
       ]
     }).compileComponents();
 
@@ -99,6 +105,10 @@ describe('ProcessingMonitorComponent', () => {
         totalRows: 100
       };
       mockProcessingService.pollStatus.and.returnValue(of(mockStatus));
+      mockResultsService.getResults.and.returnValue(of({
+        downloadUrl: 'https://example.com/file.csv',
+        aggregateAnalysis: 'Test analysis'
+      }));
 
       component.jobId = 'test-job';
       component.ngOnInit();
@@ -284,6 +294,10 @@ describe('ProcessingMonitorComponent', () => {
         totalRows: 100
       };
       mockProcessingService.pollStatus.and.returnValue(of(mockStatus));
+      mockResultsService.getResults.and.returnValue(of({
+        downloadUrl: 'https://example.com/file.csv',
+        aggregateAnalysis: 'Test analysis'
+      }));
 
       component.jobId = 'test-job';
       component.ngOnInit();
@@ -291,7 +305,7 @@ describe('ProcessingMonitorComponent', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement;
-      expect(compiled.textContent).toContain('Processing Complete!');
+      expect(compiled.textContent).toContain('Your analysis is ready!');
     }));
 
     it('should display progress percentage', fakeAsync(() => {

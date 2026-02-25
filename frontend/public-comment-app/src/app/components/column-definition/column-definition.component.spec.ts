@@ -1,8 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
+import { RouterTestingModule } from '@angular/router/testing';
 import { ColumnDefinitionComponent } from './column-definition.component';
-import { AnalysisColumn } from '../../services/processing.service';
+import { AnalysisColumn, ProcessingService } from '../../services/processing.service';
 
 describe('ColumnDefinitionComponent', () => {
   let component: ColumnDefinitionComponent;
@@ -13,12 +15,16 @@ describe('ColumnDefinitionComponent', () => {
       imports: [
         ColumnDefinitionComponent,
         ReactiveFormsModule,
-        BrowserAnimationsModule
+        BrowserAnimationsModule,
+        HttpClientTestingModule,
+        RouterTestingModule
       ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ColumnDefinitionComponent);
     component = fixture.componentInstance;
+    // Prevent ngOnInit from redirecting to /upload by setting fileMetadata
+    component.fileMetadata = { fileId: 'test-file', columns: ['col1', 'col2'], rowCount: 10 };
     fixture.detectChanges();
   });
 
@@ -55,8 +61,6 @@ describe('ColumnDefinitionComponent', () => {
       
       component.addColumn();
       
-      // Form is technically valid but trimming results in empty strings
-      // so no column should be added
       expect(component.columns.length).toBe(0);
     });
   });
@@ -198,7 +202,7 @@ describe('ColumnDefinitionComponent', () => {
 
       expect(component.editingIndex).toBeNull();
       expect(component.columnForm.get('name')?.value).toBeNull();
-      expect(component.columns[0].name).toBe('Category'); // Original unchanged
+      expect(component.columns[0].name).toBe('Category');
     });
   });
 
