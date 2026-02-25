@@ -6,6 +6,8 @@ from aws_cdk import (
     RemovalPolicy,
     CfnOutput,
     Tags,
+    BundlingOptions,
+    ILocalBundling,
     aws_s3 as s3,
     aws_dynamodb as dynamodb,
     aws_lambda as lambda_,
@@ -16,6 +18,45 @@ from aws_cdk import (
     aws_certificatemanager as acm,
 )
 from constructs import Construct
+import jsii
+import os
+import subprocess
+
+
+@jsii.implements(ILocalBundling)
+class _PipBundling:
+    """Local bundling that installs pip dependencies without Docker."""
+
+    def __init__(self, source_path: str):
+        self._source_path = source_path
+
+    def try_bundle(self, output_dir: str, *, image=None, **kwargs) -> bool:
+        # Resolve source path relative to infrastructure/ directory
+        source = os.path.join(os.path.dirname(__file__), "..", self._source_path)
+        source = os.path.abspath(source)
+        req_file = os.path.join(source, "requirements.txt")
+        # Install pip dependencies into output directory
+        if os.path.exists(req_file):
+            cmd = [
+                "pip", "install",
+                "--target", output_dir,
+                "--upgrade",
+                "-r", req_file,
+            ]
+            # On non-Linux (e.g. macOS), cross-compile for Lambda's Linux runtime
+            import platform
+            if platform.system() != "Linux":
+                cmd[2:2] = ["--platform", "manylinux2014_x86_64", "--only-binary=:all:"]
+            subprocess.check_call(cmd)
+        # Copy source files
+        import shutil
+        for item in os.listdir(source):
+            full = os.path.join(source, item)
+            dest = os.path.join(output_dir, item)
+            if os.path.isfile(full):
+                shutil.copy2(full, dest)
+        return True
+        return True
 
 
 class PublicCommentAnalyzerStack(Stack):
@@ -204,7 +245,17 @@ class PublicCommentAnalyzerStack(Stack):
             function_name=f"PublicCommentAnalyzer-UploadHandler-{self.env_name}",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../backend/upload_handler"),
+            code=lambda_.Code.from_asset(
+                "../backend/upload_handler",
+                bundling=BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
+                    ],
+                    local=_PipBundling("../backend/upload_handler"),
+                ),
+            ),
             role=self.lambda_role,
             timeout=Duration.seconds(30),
             memory_size=512,
@@ -226,7 +277,17 @@ class PublicCommentAnalyzerStack(Stack):
             function_name=f"PublicCommentAnalyzer-RowProcessor-{self.env_name}",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../backend/row_processor"),
+            code=lambda_.Code.from_asset(
+                "../backend/row_processor",
+                bundling=BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
+                    ],
+                    local=_PipBundling("../backend/row_processor"),
+                ),
+            ),
             role=self.lambda_role,
             timeout=Duration.minutes(15),
             memory_size=1024,
@@ -251,7 +312,17 @@ class PublicCommentAnalyzerStack(Stack):
             function_name=f"PublicCommentAnalyzer-AggregateAnalyzer-{self.env_name}",
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("../backend/aggregate_analyzer"),
+            code=lambda_.Code.from_asset(
+                "../backend/aggregate_analyzer",
+                bundling=BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
+                    ],
+                    local=_PipBundling("../backend/aggregate_analyzer"),
+                ),
+            ),
             role=self.lambda_role,
             timeout=Duration.minutes(5),
             memory_size=512,
