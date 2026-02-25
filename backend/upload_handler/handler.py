@@ -347,7 +347,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'columns': parsed_file.headers,
                 'rowCount': parsed_file.row_count,
                 'filename': filename,
-                'fileType': extension
+                'fileType': extension,
+                'version': '1.1.0',
+                'deployedVia': 'GitHub Actions CI/CD'
             }
             print(f"Returning success response: {response_body}")
             
