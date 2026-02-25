@@ -122,6 +122,9 @@ jobs:
         run: |
           cdk deploy \
             --context environment=${{ env.ENVIRONMENT }} \
+            --context domain_name=[REDACTED] \
+            --context certificate_arn=arn:aws:acm:us-east-1:AWS_ACCOUNT_ID:certificate/CERT_UUID \
+            --context allowed_origin=https://[REDACTED] \
             --require-approval never \
             --outputs-file outputs.json
 
