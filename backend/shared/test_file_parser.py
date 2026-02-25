@@ -6,7 +6,7 @@ import csv
 from openpyxl import Workbook
 import pytest
 
-from backend.shared.file_parser import FileParser, ParsedFile
+from file_parser import FileParser, ParsedFile
 
 
 class TestFileParser:
