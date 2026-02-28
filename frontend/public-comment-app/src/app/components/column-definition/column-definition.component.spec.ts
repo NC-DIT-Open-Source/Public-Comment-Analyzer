@@ -33,15 +33,18 @@ describe('ColumnDefinitionComponent', () => {
   });
 
   describe('Form Validation', () => {
-    it('should require column name', () => {
+    it('should not show errors initially', () => {
       const nameControl = component.columnForm.get('name');
-      expect(nameControl?.valid).toBeFalsy();
-      expect(nameControl?.hasError('required')).toBeTruthy();
+      const instructionsControl = component.columnForm.get('instructions');
+      expect(nameControl?.hasError('required')).toBeFalsy();
+      expect(instructionsControl?.hasError('required')).toBeFalsy();
     });
 
-    it('should require instructions', () => {
+    it('should show errors when addColumn is called with empty fields', () => {
+      component.addColumn();
+      const nameControl = component.columnForm.get('name');
       const instructionsControl = component.columnForm.get('instructions');
-      expect(instructionsControl?.valid).toBeFalsy();
+      expect(nameControl?.hasError('required')).toBeTruthy();
       expect(instructionsControl?.hasError('required')).toBeTruthy();
     });
 
