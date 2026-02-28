@@ -45,8 +45,8 @@ export class ColumnDefinitionComponent implements OnInit {
     private processingService: ProcessingService
   ) {
     this.columnForm = this.fb.group({
-      name: ['', [Validators.required, Validators.minLength(1)]],
-      instructions: ['', [Validators.required, Validators.minLength(1)]]
+      name: [''],
+      instructions: ['']
     });
 
     // Get file metadata from navigation state
@@ -77,29 +77,42 @@ export class ColumnDefinitionComponent implements OnInit {
   }
 
   addColumn(): void {
-    if (this.columnForm.valid) {
-      const name = this.columnForm.value.name.trim();
-      const instructions = this.columnForm.value.instructions.trim();
+    const name = this.columnForm.value.name?.trim() || '';
+    const instructions = this.columnForm.value.instructions?.trim() || '';
+    
+    // Validate: both fields must be filled if user is trying to add/update
+    if (!name || !instructions) {
+      // Mark fields as touched to show validation errors
+      this.columnForm.get('name')?.markAsTouched();
+      this.columnForm.get('instructions')?.markAsTouched();
       
-      // Don't add if trimmed values are empty
-      if (!name || !instructions) {
-        return;
+      // Set errors manually
+      if (!name) {
+        this.columnForm.get('name')?.setErrors({ required: true });
       }
-
-      const newColumn: AnalysisColumn = { name, instructions };
-
-      if (this.editingIndex !== null) {
-        // Update existing column
-        this.columns[this.editingIndex] = newColumn;
-        this.editingIndex = null;
-      } else {
-        // Add new column
-        this.columns.push(newColumn);
+      if (!instructions) {
+        this.columnForm.get('instructions')?.setErrors({ required: true });
       }
-
-      this.columnForm.reset();
-      this.columnsChanged.emit(this.columns);
+      return;
     }
+
+    // Clear any errors
+    this.columnForm.get('name')?.setErrors(null);
+    this.columnForm.get('instructions')?.setErrors(null);
+
+    const newColumn: AnalysisColumn = { name, instructions };
+
+    if (this.editingIndex !== null) {
+      // Update existing column
+      this.columns[this.editingIndex] = newColumn;
+      this.editingIndex = null;
+    } else {
+      // Add new column
+      this.columns.push(newColumn);
+    }
+
+    this.columnForm.reset();
+    this.columnsChanged.emit(this.columns);
   }
 
   editColumn(index: number): void {

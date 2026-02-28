@@ -33,7 +33,7 @@
         </mat-form-field>
 
         <div class="button-group">
-          <button mat-raised-button color="primary" type="submit" [disabled]="!columnForm.valid">
+          <button mat-raised-button color="primary" type="submit">
             {{ isEditing ? 'Update Column' : 'Add Column' }}
           </button>
           <button mat-button type="button" *ngIf="isEditing" (click)="cancelEdit()">
