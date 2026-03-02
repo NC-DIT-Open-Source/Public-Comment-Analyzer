@@ -20,6 +20,47 @@
     width: 100%;
   }
 
+  .type-toggle {
+    margin-bottom: $spacing-lg;
+
+    label {
+      display: block;
+      margin-bottom: $spacing-sm;
+      font-weight: $font-weight-bold;
+      color: $color-primary;
+      font-size: $font-size-body;
+    }
+  }
+
+  .options-section {
+    margin-bottom: $spacing-md;
+
+    .options-hint {
+      color: $color-gray-dark;
+      font-size: $font-size-breadcrumb;
+      margin-bottom: $spacing-md;
+    }
+
+    .option-row {
+      display: flex;
+      align-items: flex-start;
+      gap: $spacing-sm;
+      margin-bottom: $spacing-xs;
+
+      .option-value {
+        flex: 1;
+      }
+
+      .option-description {
+        flex: 2;
+      }
+    }
+
+    .add-option-btn {
+      margin-top: $spacing-sm;
+    }
+  }
+
   .button-group {
     display: flex;
     gap: $spacing-md;
@@ -68,10 +109,32 @@
       align-items: center;
       margin-bottom: $spacing-sm;
 
+      .chip-title-row {
+        display: flex;
+        align-items: center;
+        gap: $spacing-sm;
+      }
+
       strong {
         color: $color-primary;
         font-size: $font-size-h6;
         font-weight: $font-weight-bold;
+      }
+
+      .chip-type-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background-color: $color-gray;
+        color: $color-gray-dark;
+        font-weight: $font-weight-bold;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+
+        &.categorized {
+          background-color: $color-secondary;
+          color: $color-white;
+        }
       }
 
       .chip-actions {
@@ -98,6 +161,27 @@
       line-height: $line-height-body;
       padding-left: $spacing-md;
       border-left: 3px solid $color-secondary;
+    }
+
+    .chip-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: $spacing-sm;
+      padding-left: $spacing-md;
+      border-left: 3px solid $color-secondary;
+
+      .option-tag {
+        font-size: $font-size-breadcrumb;
+        color: $color-primary;
+        background-color: lighten($color-secondary, 40%);
+        padding: 2px 10px;
+        border-radius: 12px;
+
+        .option-desc {
+          color: $color-gray-dark;
+          font-style: italic;
+        }
+      }
     }
   }
 }

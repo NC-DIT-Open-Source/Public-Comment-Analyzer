@@ -1,14 +1,15 @@
 import { Component, EventEmitter, Output, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormGroup, FormArray, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCardModule } from '@angular/material/card';
-import { AnalysisColumn, ProcessingService } from '../../services/processing.service';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { AnalysisColumn, CategoryOption, ProcessingService } from '../../services/processing.service';
 import { FileMetadata } from '../../services/file-upload.service';
 
 @Component({
@@ -23,14 +24,15 @@ import { FileMetadata } from '../../services/file-upload.service';
     MatButtonModule,
     MatChipsModule,
     MatIconModule,
-    MatCardModule
+    MatCardModule,
+    MatButtonToggleModule
   ],
   templateUrl: './column-definition.component.html',
   styleUrl: './column-definition.component.scss'
 })
 export class ColumnDefinitionComponent implements OnInit {
   @Output() columnsChanged = new EventEmitter<AnalysisColumn[]>();
-  
+
   columnForm: FormGroup;
   columns: AnalysisColumn[] = [];
   editingIndex: number | null = null;
@@ -38,6 +40,7 @@ export class ColumnDefinitionComponent implements OnInit {
   fileName: string = '';
   isProcessing = false;
   errorMessage: string | null = null;
+  columnType: 'open_text' | 'categorized' = 'open_text';
 
   constructor(
     private fb: FormBuilder,
@@ -46,7 +49,8 @@ export class ColumnDefinitionComponent implements OnInit {
   ) {
     this.columnForm = this.fb.group({
       name: [''],
-      instructions: ['']
+      instructions: [''],
+      options: this.fb.array([])
     });
 
     // Get file metadata from navigation state
@@ -61,7 +65,7 @@ export class ColumnDefinitionComponent implements OnInit {
     console.log('ColumnDefinitionComponent ngOnInit');
     console.log('Initial fileMetadata:', this.fileMetadata);
     console.log('History state:', history.state);
-    
+
     // If no file metadata, redirect back to upload
     if (!this.fileMetadata) {
       const state = history.state;
@@ -76,51 +80,141 @@ export class ColumnDefinitionComponent implements OnInit {
     }
   }
 
+  get optionsArray(): FormArray {
+    return this.columnForm.get('options') as FormArray;
+  }
+
+  onColumnTypeChange(type: 'open_text' | 'categorized'): void {
+    this.columnType = type;
+    if (type === 'categorized') {
+      // Clear instructions, ensure at least 2 options
+      this.columnForm.patchValue({ instructions: '' });
+      while (this.optionsArray.length < 2) {
+        this.addOption();
+      }
+    } else {
+      // Clear options
+      while (this.optionsArray.length > 0) {
+        this.optionsArray.removeAt(0);
+      }
+    }
+  }
+
+  addOption(): void {
+    if (this.optionsArray.length >= 50) return;
+    this.optionsArray.push(this.fb.group({
+      value: [''],
+      description: ['']
+    }));
+  }
+
+  removeOption(index: number): void {
+    if (this.optionsArray.length <= 2) return;
+    this.optionsArray.removeAt(index);
+  }
+
   addColumn(): void {
     const name = this.columnForm.value.name?.trim() || '';
-    const instructions = this.columnForm.value.instructions?.trim() || '';
-    
-    // Validate: both fields must be filled if user is trying to add/update
-    if (!name || !instructions) {
-      // Mark fields as touched to show validation errors
+
+    if (!name) {
       this.columnForm.get('name')?.markAsTouched();
-      this.columnForm.get('instructions')?.markAsTouched();
-      
-      // Set errors manually
-      if (!name) {
-        this.columnForm.get('name')?.setErrors({ required: true });
-      }
-      if (!instructions) {
-        this.columnForm.get('instructions')?.setErrors({ required: true });
-      }
+      this.columnForm.get('name')?.setErrors({ required: true });
       return;
     }
 
-    // Clear any errors
     this.columnForm.get('name')?.setErrors(null);
-    this.columnForm.get('instructions')?.setErrors(null);
 
-    const newColumn: AnalysisColumn = { name, instructions };
+    if (this.columnType === 'open_text') {
+      const instructions = this.columnForm.value.instructions?.trim() || '';
+      if (!instructions) {
+        this.columnForm.get('instructions')?.markAsTouched();
+        this.columnForm.get('instructions')?.setErrors({ required: true });
+        return;
+      }
+      this.columnForm.get('instructions')?.setErrors(null);
 
-    if (this.editingIndex !== null) {
-      // Update existing column
-      this.columns[this.editingIndex] = newColumn;
-      this.editingIndex = null;
+      const newColumn: AnalysisColumn = { name, instructions, type: 'open_text' };
+      if (this.editingIndex !== null) {
+        this.columns[this.editingIndex] = newColumn;
+        this.editingIndex = null;
+      } else {
+        this.columns.push(newColumn);
+      }
     } else {
-      // Add new column
-      this.columns.push(newColumn);
+      // Categorized
+      const rawOptions = this.columnForm.value.options || [];
+      const options: CategoryOption[] = [];
+      let hasError = false;
+
+      for (const opt of rawOptions) {
+        const value = opt.value?.trim() || '';
+        const description = opt.description?.trim() || '';
+        if (!value || !description) {
+          hasError = true;
+          break;
+        }
+        options.push({ value, description });
+      }
+
+      if (hasError || options.length < 2) {
+        this.errorMessage = 'Each option needs both a value and description, with at least 2 options.';
+        return;
+      }
+
+      // Build instructions string from options for backend compatibility
+      const instructions = options.map(o => `${o.value}: ${o.description}`).join('; ');
+
+      const newColumn: AnalysisColumn = {
+        name,
+        instructions,
+        type: 'categorized',
+        options
+      };
+
+      if (this.editingIndex !== null) {
+        this.columns[this.editingIndex] = newColumn;
+        this.editingIndex = null;
+      } else {
+        this.columns.push(newColumn);
+      }
     }
 
+    this.errorMessage = null;
     this.columnForm.reset();
+    this.resetForm();
     this.columnsChanged.emit(this.columns);
+  }
+
+  private resetForm(): void {
+    this.columnType = 'open_text';
+    while (this.optionsArray.length > 0) {
+      this.optionsArray.removeAt(0);
+    }
   }
 
   editColumn(index: number): void {
     const column = this.columns[index];
-    this.columnForm.patchValue({
-      name: column.name,
-      instructions: column.instructions
-    });
+    this.columnType = column.type || 'open_text';
+
+    // Clear existing options
+    while (this.optionsArray.length > 0) {
+      this.optionsArray.removeAt(0);
+    }
+
+    if (this.columnType === 'categorized' && column.options) {
+      for (const opt of column.options) {
+        this.optionsArray.push(this.fb.group({
+          value: [opt.value],
+          description: [opt.description]
+        }));
+      }
+      this.columnForm.patchValue({ name: column.name, instructions: '' });
+    } else {
+      this.columnForm.patchValue({
+        name: column.name,
+        instructions: column.instructions
+      });
+    }
     this.editingIndex = index;
   }
 
@@ -129,6 +223,7 @@ export class ColumnDefinitionComponent implements OnInit {
     if (this.editingIndex === index) {
       this.editingIndex = null;
       this.columnForm.reset();
+      this.resetForm();
     }
     this.columnsChanged.emit(this.columns);
   }
@@ -136,6 +231,7 @@ export class ColumnDefinitionComponent implements OnInit {
   cancelEdit(): void {
     this.editingIndex = null;
     this.columnForm.reset();
+    this.resetForm();
   }
 
   get isEditing(): boolean {
@@ -159,9 +255,8 @@ export class ColumnDefinitionComponent implements OnInit {
     this.processingService.startProcessing(request).subscribe({
       next: (response) => {
         this.isProcessing = false;
-        // Navigate to processing monitor
         this.router.navigate(['/processing'], {
-          state: { 
+          state: {
             jobId: response.jobId,
             fileMetadata: this.fileMetadata,
             fileName: this.fileName

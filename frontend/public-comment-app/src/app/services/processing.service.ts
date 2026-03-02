@@ -3,9 +3,16 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, interval, switchMap, takeWhile } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+export interface CategoryOption {
+  value: string;
+  description: string;
+}
+
 export interface AnalysisColumn {
   name: string;
   instructions: string;
+  type: 'open_text' | 'categorized';
+  options?: CategoryOption[];
 }
 
 export interface ProcessingRequest {

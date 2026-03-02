@@ -332,7 +332,7 @@ This is used by all deployment scripts and AWS CLI commands.
 Before merging to main (triggers automatic deployment):
 - [ ] ACM certificate validated for custom domain
 - [ ] `allowed_origin` set correctly in CDK stack
-- [ ] All tests passing locally (backend + frontend)
+- [ ] All tests passing locally (backend + frontend) (very important)
 - [ ] Security headers configured
 - [ ] Rate limiting configured
 - [ ] CloudWatch Alarms set up (optional)

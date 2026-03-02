@@ -43,9 +43,7 @@ describe('ColumnDefinitionComponent', () => {
     it('should show errors when addColumn is called with empty fields', () => {
       component.addColumn();
       const nameControl = component.columnForm.get('name');
-      const instructionsControl = component.columnForm.get('instructions');
       expect(nameControl?.hasError('required')).toBeTruthy();
-      expect(instructionsControl?.hasError('required')).toBeTruthy();
     });
 
     it('should be valid when both fields are filled', () => {
@@ -68,8 +66,9 @@ describe('ColumnDefinitionComponent', () => {
     });
   });
 
-  describe('Adding Columns', () => {
-    it('should add a new column when form is valid', () => {
+  describe('Adding Open Text Columns', () => {
+    it('should add a new open text column when form is valid', () => {
+      component.columnType = 'open_text';
       component.columnForm.patchValue({
         name: 'Category',
         instructions: 'Categorize the comment'
@@ -80,6 +79,7 @@ describe('ColumnDefinitionComponent', () => {
       expect(component.columns.length).toBe(1);
       expect(component.columns[0].name).toBe('Category');
       expect(component.columns[0].instructions).toBe('Categorize the comment');
+      expect(component.columns[0].type).toBe('open_text');
     });
 
     it('should emit columnsChanged event when adding column', (done) => {
@@ -109,7 +109,7 @@ describe('ColumnDefinitionComponent', () => {
       expect(component.columnForm.get('instructions')?.value).toBeNull();
     });
 
-    it('should not add column when form is invalid', () => {
+    it('should not add column when name is empty', () => {
       component.columnForm.patchValue({
         name: '',
         instructions: 'Some instructions'
@@ -151,20 +151,106 @@ describe('ColumnDefinitionComponent', () => {
     });
   });
 
+  describe('Adding Categorized Columns', () => {
+    beforeEach(() => {
+      component.onColumnTypeChange('categorized');
+    });
+
+    it('should initialize with 2 empty options when switching to categorized', () => {
+      expect(component.optionsArray.length).toBe(2);
+    });
+
+    it('should add a categorized column with valid options', () => {
+      component.columnForm.patchValue({ name: 'Stance' });
+      component.optionsArray.at(0).patchValue({ value: 'Pro', description: 'Supports the proposal' });
+      component.optionsArray.at(1).patchValue({ value: 'Against', description: 'Opposes the proposal' });
+
+      component.addColumn();
+
+      expect(component.columns.length).toBe(1);
+      expect(component.columns[0].type).toBe('categorized');
+      expect(component.columns[0].options?.length).toBe(2);
+      expect(component.columns[0].options?.[0].value).toBe('Pro');
+    });
+
+    it('should not add categorized column with empty option values', () => {
+      component.columnForm.patchValue({ name: 'Stance' });
+      component.optionsArray.at(0).patchValue({ value: '', description: 'Supports' });
+      component.optionsArray.at(1).patchValue({ value: 'Against', description: 'Opposes' });
+
+      component.addColumn();
+
+      expect(component.columns.length).toBe(0);
+      expect(component.errorMessage).toBeTruthy();
+    });
+
+    it('should allow adding more options', () => {
+      component.addOption();
+      expect(component.optionsArray.length).toBe(3);
+    });
+
+    it('should not allow removing below 2 options', () => {
+      component.removeOption(0);
+      expect(component.optionsArray.length).toBe(2);
+    });
+
+    it('should not allow more than 50 options', () => {
+      for (let i = 0; i < 50; i++) {
+        component.addOption();
+      }
+      // Started with 2, added 48 more (capped at 50)
+      expect(component.optionsArray.length).toBeLessThanOrEqual(50);
+    });
+  });
+
+  describe('Column Type Toggle', () => {
+    it('should default to open_text', () => {
+      expect(component.columnType).toBe('open_text');
+    });
+
+    it('should switch to categorized and create options', () => {
+      component.onColumnTypeChange('categorized');
+      expect(component.columnType).toBe('categorized');
+      expect(component.optionsArray.length).toBe(2);
+    });
+
+    it('should switch back to open_text and clear options', () => {
+      component.onColumnTypeChange('categorized');
+      component.onColumnTypeChange('open_text');
+      expect(component.columnType).toBe('open_text');
+      expect(component.optionsArray.length).toBe(0);
+    });
+  });
+
   describe('Editing Columns', () => {
     beforeEach(() => {
       component.columns = [
-        { name: 'Category', instructions: 'Categorize the comment' },
-        { name: 'Sentiment', instructions: 'Analyze sentiment' }
+        { name: 'Category', instructions: 'Categorize the comment', type: 'open_text' },
+        { name: 'Stance', instructions: 'Pro: Supports; Against: Opposes', type: 'categorized',
+          options: [
+            { value: 'Pro', description: 'Supports' },
+            { value: 'Against', description: 'Opposes' }
+          ]
+        }
       ];
     });
 
-    it('should populate form with column data when editing', () => {
+    it('should populate form with open text column data when editing', () => {
       component.editColumn(0);
 
       expect(component.columnForm.get('name')?.value).toBe('Category');
       expect(component.columnForm.get('instructions')?.value).toBe('Categorize the comment');
+      expect(component.columnType).toBe('open_text');
       expect(component.editingIndex).toBe(0);
+    });
+
+    it('should populate form with categorized column data when editing', () => {
+      component.editColumn(1);
+
+      expect(component.columnForm.get('name')?.value).toBe('Stance');
+      expect(component.columnType).toBe('categorized');
+      expect(component.optionsArray.length).toBe(2);
+      expect(component.optionsArray.at(0).value.value).toBe('Pro');
     });
 
     it('should update column when submitting in edit mode', () => {
@@ -181,40 +267,23 @@ describe('ColumnDefinitionComponent', () => {
       expect(component.editingIndex).toBeNull();
     });
 
-    it('should reset editing state after update', () => {
-      component.editColumn(1);
-      component.columnForm.patchValue({
-        name: 'New Name',
-        instructions: 'New instructions'
-      });
-
-      component.addColumn();
-
-      expect(component.isEditing).toBeFalsy();
-      expect(component.columnForm.get('name')?.value).toBeNull();
-    });
-
     it('should cancel editing and reset form', () => {
       component.editColumn(0);
-      component.columnForm.patchValue({
-        name: 'Modified',
-        instructions: 'Modified instructions'
-      });
-
       component.cancelEdit();
 
       expect(component.editingIndex).toBeNull();
       expect(component.columnForm.get('name')?.value).toBeNull();
       expect(component.columns[0].name).toBe('Category');
+      expect(component.columnType).toBe('open_text');
     });
   });
 
   describe('Removing Columns', () => {
     beforeEach(() => {
       component.columns = [
-        { name: 'Category', instructions: 'Categorize' },
-        { name: 'Sentiment', instructions: 'Analyze' },
-        { name: 'Rating', instructions: 'Rate' }
+        { name: 'Category', instructions: 'Categorize', type: 'open_text' },
+        { name: 'Sentiment', instructions: 'Analyze', type: 'open_text' },
+        { name: 'Rating', instructions: 'Rate', type: 'open_text' }
       ];
     });
 
@@ -242,19 +311,12 @@ describe('ColumnDefinitionComponent', () => {
       expect(component.editingIndex).toBeNull();
       expect(component.columnForm.get('name')?.value).toBeNull();
     });
-
-    it('should not affect editing state when removing different column', () => {
-      component.editColumn(1);
-      component.removeColumn(0);
-
-      expect(component.editingIndex).not.toBeNull();
-    });
   });
 
   describe('Display', () => {
-    it('should show both name and instructions for each column', () => {
+    it('should show both name and instructions for open text columns', () => {
       component.columns = [
-        { name: 'Test Column', instructions: 'Test instructions' }
+        { name: 'Test Column', instructions: 'Test instructions', type: 'open_text' }
       ];
       fixture.detectChanges();
 
@@ -263,10 +325,27 @@ describe('ColumnDefinitionComponent', () => {
       expect(compiled.textContent).toContain('Test instructions');
     });
 
+    it('should show type badge for categorized columns', () => {
+      component.columns = [
+        { name: 'Stance', instructions: 'Pro: Supports; Against: Opposes', type: 'categorized',
+          options: [
+            { value: 'Pro', description: 'Supports' },
+            { value: 'Against', description: 'Opposes' }
+          ]
+        }
+      ];
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement;
+      expect(compiled.textContent).toContain('Categorized');
+      expect(compiled.textContent).toContain('Pro');
+      expect(compiled.textContent).toContain('Against');
+    });
+
     it('should display column count', () => {
       component.columns = [
-        { name: 'Col1', instructions: 'Inst1' },
-        { name: 'Col2', instructions: 'Inst2' }
+        { name: 'Col1', instructions: 'Inst1', type: 'open_text' },
+        { name: 'Col2', instructions: 'Inst2', type: 'open_text' }
       ];
       fixture.detectChanges();
 

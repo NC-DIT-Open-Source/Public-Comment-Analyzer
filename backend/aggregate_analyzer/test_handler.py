@@ -161,12 +161,12 @@ class TestAggregateAnalyzer(unittest.TestCase):
         prompt = handler._construct_aggregate_prompt(formatted_data, analysis_columns)
         
         # Check that prompt contains expected elements
-        self.assertIn('aggregate sentiment analysis', prompt)
+        self.assertIn('aggregate analysis', prompt)
         self.assertIn('sentiment', prompt)
         self.assertIn('Analyze sentiment as positive, negative, or neutral', prompt)
         self.assertIn(formatted_data, prompt)
-        self.assertIn('Overall Sentiment Distribution', prompt)
-        self.assertIn('Key Themes and Patterns', prompt)
+        self.assertIn('Categorized Column Breakdown', prompt)
+        self.assertIn('Open Text Themes and Patterns', prompt)
     
     @patch('handler._get_bedrock_runtime')
     def test_call_bedrock_opus_success(self, mock_get_bedrock):
