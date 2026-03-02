@@ -332,6 +332,7 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
     - Total number of comments
     - Sample of processed rows
     - Distribution of analysis column values
+    - Exact counts for categorized columns
     
     Args:
         parsed_file: Parsed file data
@@ -342,28 +343,52 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
     """
     total_rows = parsed_file.row_count
     
-    # Get analysis column names
-    analysis_col_names = [col['name'] for col in analysis_columns]
+    # Separate categorized vs open text columns
+    categorized_cols = {}
+    open_text_cols = []
+    for col in analysis_columns:
+        col_type = col.get('type', 'open_text')
+        if col_type == 'categorized' and col.get('options'):
+            categorized_cols[col['name']] = [opt['value'] for opt in col['options']]
+        else:
+            open_text_cols.append(col['name'])
     
-    # Calculate value distributions for analysis columns
+    all_col_names = [col['name'] for col in analysis_columns]
+    
+    # Calculate value distributions for all analysis columns
     distributions = {}
-    for col_name in analysis_col_names:
+    for col_name in all_col_names:
         value_counts = {}
         for row in parsed_file.rows:
             value = row.get(col_name, '')
-            if value:  # Only count non-empty values
+            if value:
                 value_counts[value] = value_counts.get(value, 0) + 1
         distributions[col_name] = value_counts
     
-    # Format distributions
-    distribution_text = []
-    for col_name, value_counts in distributions.items():
-        distribution_text.append(f"\n{col_name}:")
-        # Sort by count descending
+    # Format categorized column distributions (exact counts)
+    categorized_text = []
+    for col_name, valid_options in categorized_cols.items():
+        value_counts = distributions.get(col_name, {})
+        categorized_text.append(f"\n{col_name} (Categorized):")
+        for opt in valid_options:
+            count = value_counts.get(opt, 0)
+            percentage = (count / total_rows) * 100 if total_rows > 0 else 0
+            categorized_text.append(f"  - {opt}: {count} ({percentage:.1f}%)")
+        # Count blanks/unmatched
+        matched_count = sum(value_counts.get(opt, 0) for opt in valid_options)
+        unmatched = total_rows - matched_count
+        if unmatched > 0:
+            categorized_text.append(f"  - (unmatched/blank): {unmatched} ({(unmatched / total_rows) * 100:.1f}%)")
+    
+    # Format open text column distributions (top values)
+    open_text_distribution = []
+    for col_name in open_text_cols:
+        value_counts = distributions.get(col_name, {})
+        open_text_distribution.append(f"\n{col_name} (Open Text):")
         sorted_values = sorted(value_counts.items(), key=lambda x: x[1], reverse=True)
-        for value, count in sorted_values[:10]:  # Top 10 values
+        for value, count in sorted_values[:10]:
             percentage = (count / total_rows) * 100
-            distribution_text.append(f"  - {value}: {count} ({percentage:.1f}%)")
+            open_text_distribution.append(f"  - {value}: {count} ({percentage:.1f}%)")
     
     # Get sample rows (first 5 and last 5)
     sample_size = min(5, total_rows)
@@ -373,17 +398,20 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
     
     # Format sample rows
     sample_text = []
-    for i, row in enumerate(sample_rows[:10]):  # Max 10 samples
+    for i, row in enumerate(sample_rows[:10]):
         sample_text.append(f"\nSample {i+1}:")
-        for col_name in analysis_col_names:
+        for col_name in all_col_names:
             value = row.get(col_name, '')
             sample_text.append(f"  {col_name}: {value}")
     
     # Combine all parts
     formatted_data = f"""Total Comments: {total_rows}
 
-Analysis Column Distributions:
-{''.join(distribution_text)}
+Categorized Column Results:
+{''.join(categorized_text) if categorized_text else '  (none)'}
+
+Open Text Column Distributions:
+{''.join(open_text_distribution) if open_text_distribution else '  (none)'}
 
 Sample Processed Comments:
 {''.join(sample_text)}"""
@@ -403,10 +431,17 @@ def _construct_aggregate_prompt(formatted_data: str,
     Returns:
         Prompt string for Bedrock
     """
-    # Get column descriptions
+    # Get column descriptions, noting type
     column_descriptions = []
     for col in analysis_columns:
-        column_descriptions.append(f"- {col['name']}: {col['instructions']}")
+        col_type = col.get('type', 'open_text')
+        if col_type == 'categorized' and col.get('options'):
+            option_values = [opt['value'] for opt in col['options']]
+            column_descriptions.append(
+                f"- {col['name']} (Categorized — valid values: {', '.join(option_values)})"
+            )
+        else:
+            column_descriptions.append(f"- {col['name']} (Open Text): {col['instructions']}")
     
     prompt = f"""You are analyzing a dataset of public comments that have been individually processed and categorized.
 
@@ -417,15 +452,17 @@ Here is a summary of the processed data:
 
 {formatted_data}
 
-Please provide a comprehensive aggregate sentiment analysis including:
+Please provide a comprehensive aggregate analysis including:
 
-1. Overall Sentiment Distribution: Provide percentages and counts for the main sentiment categories found in the data.
+1. Categorized Column Breakdown: For each categorized column, present the exact counts and percentages from the data above. Highlight the dominant category and any notable splits.
 
-2. Key Themes and Patterns: Identify the most prominent themes, topics, or patterns that emerge across all comments.
+2. Open Text Themes and Patterns: For open text columns, identify the most prominent themes, topics, or patterns that emerge across all comments.
 
-3. Notable Trends or Outliers: Highlight any interesting trends, unusual patterns, or outliers in the data.
+3. Cross-Column Insights: Describe any interesting relationships between the categorized results and the open text themes.
 
-4. Quantitative Summary Statistics: Provide relevant statistics such as most common categories, average ratings (if applicable), and distribution metrics.
+4. Notable Trends or Outliers: Highlight any interesting trends, unusual patterns, or outliers in the data.
+
+5. Quantitative Summary: Provide relevant statistics such as most common categories, distribution metrics, and any actionable takeaways.
 
 Be specific and cite percentages where applicable. Focus on actionable insights that would be valuable for understanding the overall sentiment and themes in this dataset."""
     
