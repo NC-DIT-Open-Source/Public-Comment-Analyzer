@@ -200,12 +200,12 @@ sentiment: positive 60%, negative 30%, neutral 10%"""
         
         prompt = handler._construct_aggregate_prompt(formatted_data, analysis_columns)
         
-        # Requirement 6.2: Request sentiment distribution and key themes
-        self.assertIn('Overall Sentiment Distribution', prompt)
-        self.assertIn('Key Themes and Patterns', prompt)
+        # Requirement 6.2: Request categorized breakdown and open text themes
+        self.assertIn('Categorized Column Breakdown', prompt)
+        self.assertIn('Open Text Themes and Patterns', prompt)
         
         # Requirement 6.4: Request quantitative summaries
-        self.assertIn('Quantitative Summary Statistics', prompt)
+        self.assertIn('Quantitative Summary', prompt)
         self.assertIn('percentages', prompt)
         
         # Verify analysis column instructions are included
