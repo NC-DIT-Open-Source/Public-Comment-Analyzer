@@ -325,7 +325,7 @@ class PublicCommentAnalyzerStack(Stack):
                 ),
             ),
             role=self.lambda_role,
-            timeout=Duration.minutes(5),
+            timeout=Duration.minutes(15),
             memory_size=512,
             environment={
                 "DATA_BUCKET": self.data_bucket.bucket_name,
