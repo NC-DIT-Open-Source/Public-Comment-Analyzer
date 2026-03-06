@@ -44,6 +44,8 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   isLoadingResults: boolean = false;
   resultsError: string | null = null;
   private analysisRetryTimer: any = null;
+  private analysisRetryCount: number = 0;
+  private readonly MAX_ANALYSIS_RETRIES = 60; // 60 retries * 5s = 5 minutes max wait
 
   constructor(
     private processingService: ProcessingService,
@@ -121,9 +123,15 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
           const html = await marked.parse(response.aggregateAnalysis);
           this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
           this.isLoadingResults = false;
+          this.analysisRetryCount = 0;
         } else if (response.analysisStatus === 'generating') {
-          // Analysis is being generated async — retry in 5 seconds
-          this.analysisRetryTimer = setTimeout(() => this.loadResults(), 5000);
+          this.analysisRetryCount++;
+          if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
+            this.isLoadingResults = false;
+            this.resultsError = 'Aggregate analysis is taking longer than expected. Your processed file is still available for download. You can retry the analysis or download your results now.';
+          } else {
+            this.analysisRetryTimer = setTimeout(() => this.loadResults(), 5000);
+          }
         } else {
           this.isLoadingResults = false;
         }
@@ -143,6 +151,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   }
 
   retryResults(): void {
+    this.analysisRetryCount = 0;
     this.loadResults();
   }
 

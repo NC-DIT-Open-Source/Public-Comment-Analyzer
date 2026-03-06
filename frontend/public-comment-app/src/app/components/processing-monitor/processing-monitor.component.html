@@ -64,9 +64,15 @@
         <div class="results-error" *ngIf="resultsError">
           <mat-icon color="warn">error</mat-icon>
           <p>{{ resultsError }}</p>
-          <button mat-raised-button color="primary" (click)="retryResults()">
-            <mat-icon>refresh</mat-icon> Retry
-          </button>
+          <div class="results-actions">
+            <button mat-raised-button color="primary" (click)="downloadResults()" *ngIf="results?.downloadUrl">
+              <mat-icon>download</mat-icon>
+              Download CSV
+            </button>
+            <button mat-raised-button color="accent" (click)="retryResults()">
+              <mat-icon>refresh</mat-icon> Retry Analysis
+            </button>
+          </div>
         </div>
 
         <!-- Results loaded -->

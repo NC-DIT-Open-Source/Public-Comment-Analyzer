@@ -32,6 +32,8 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   error: string | null = null;
   renderedAnalysis: SafeHtml = '';
   private analysisRetryTimer: any = null;
+  private analysisRetryCount: number = 0;
+  private readonly MAX_ANALYSIS_RETRIES = 60;
 
   constructor(
     private resultsService: ResultsService,
@@ -85,9 +87,15 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
           const html = await marked.parse(response.aggregateAnalysis);
           this.renderedAnalysis = this.sanitizer.sanitize(1, html) || '';
           this.isLoading = false;
+          this.analysisRetryCount = 0;
         } else if (response.analysisStatus === 'generating') {
-          // Analysis is being generated async — retry in 5 seconds
-          this.analysisRetryTimer = setTimeout(() => this.loadResults(), 5000);
+          this.analysisRetryCount++;
+          if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
+            this.isLoading = false;
+            this.error = 'Aggregate analysis is taking longer than expected. Your processed file is still available for download.';
+          } else {
+            this.analysisRetryTimer = setTimeout(() => this.loadResults(), 5000);
+          }
         } else {
           this.isLoading = false;
         }
