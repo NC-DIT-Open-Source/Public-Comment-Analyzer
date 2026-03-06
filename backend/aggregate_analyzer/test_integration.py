@@ -170,19 +170,31 @@ Quantitative Summary:
         )
         
         analysis_columns = [
-            {'name': 'sentiment', 'instructions': 'Analyze sentiment'},
-            {'name': 'rating', 'instructions': 'Rate 1-5'}
+            {
+                'name': 'sentiment',
+                'type': 'categorized',
+                'instructions': 'Analyze sentiment',
+                'options': [
+                    {'value': 'positive', 'description': 'Positive'},
+                    {'value': 'negative', 'description': 'Negative'},
+                    {'value': 'neutral', 'description': 'Neutral'}
+                ]
+            },
+            {'name': 'rating', 'type': 'open_text', 'instructions': 'Rate 1-5'}
         ]
         
         formatted_data = handler._format_data_for_analysis(parsed_file, analysis_columns)
         
         # Verify formatted data contains summary
         self.assertIn('Total Comments: 100', formatted_data)
-        self.assertIn('sentiment:', formatted_data)
-        self.assertIn('rating:', formatted_data)
+        self.assertIn('sentiment', formatted_data)
+        self.assertIn('rating', formatted_data)
         
-        # Verify percentages are calculated
+        # Verify categorized column has percentages
         self.assertIn('%', formatted_data)
+        
+        # Verify open text column uses map-reduce format (all values listed for <=150 rows)
+        self.assertIn('rating — All 100 responses:', formatted_data)
         
         # Verify sample size is limited (not all 100 rows)
         sample_count = formatted_data.count('Sample')
