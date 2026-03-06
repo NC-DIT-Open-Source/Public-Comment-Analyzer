@@ -18,6 +18,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
+  HUSKY: 0
   NODE_VERSION: '18'
   PYTHON_VERSION: '3.11'
 
