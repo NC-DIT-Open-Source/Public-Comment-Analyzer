@@ -5,6 +5,7 @@ import os
 import tempfile
 from typing import Dict, Any, List
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import boto3
 from botocore.exceptions import ClientError
 from botocore.config import Config
@@ -35,6 +36,9 @@ JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
 
 # Constants
 CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
+CLAUDE_SONNET_MODEL_ID = "us.anthropic.claude-sonnet-4-6-v1"
+CHUNK_SIZE = 150  # rows per chunk for map-reduce summarization
+MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
 
 
 def _cors_origin() -> str:
@@ -332,11 +336,9 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
     """
     Format processed data for aggregate analysis prompt.
     
-    Creates a summary of the data including:
-    - Total number of comments
-    - Sample of processed rows
-    - Distribution of analysis column values
-    - Exact counts for categorized columns
+    Uses a map-reduce approach for open text columns:
+    - Categorized columns: exact distribution counts (computed in Python)
+    - Open text columns: chunked and summarized via Haiku, then fed to Opus
     
     Args:
         parsed_file: Parsed file data
@@ -349,58 +351,49 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
     
     # Separate categorized vs open text columns
     categorized_cols = {}
-    open_text_cols = []
+    open_text_cols = {}
     for col in analysis_columns:
         col_type = col.get('type', 'open_text')
         if col_type == 'categorized' and col.get('options'):
             categorized_cols[col['name']] = [opt['value'] for opt in col['options']]
         else:
-            open_text_cols.append(col['name'])
+            open_text_cols[col['name']] = col.get('instructions', '')
     
     all_col_names = [col['name'] for col in analysis_columns]
     
-    # Calculate value distributions for all analysis columns
-    distributions = {}
-    for col_name in all_col_names:
+    # --- Categorized columns: exact distributions ---
+    categorized_text = []
+    for col_name, valid_options in categorized_cols.items():
         value_counts = {}
         for row in parsed_file.rows:
             value = row.get(col_name, '')
             if value:
                 value_counts[value] = value_counts.get(value, 0) + 1
-        distributions[col_name] = value_counts
-    
-    # Format categorized column distributions (exact counts)
-    categorized_text = []
-    for col_name, valid_options in categorized_cols.items():
-        value_counts = distributions.get(col_name, {})
+        
         categorized_text.append(f"\n{col_name} (Categorized):")
         for opt in valid_options:
             count = value_counts.get(opt, 0)
             percentage = (count / total_rows) * 100 if total_rows > 0 else 0
             categorized_text.append(f"  - {opt}: {count} ({percentage:.1f}%)")
-        # Count blanks/unmatched
         matched_count = sum(value_counts.get(opt, 0) for opt in valid_options)
         unmatched = total_rows - matched_count
         if unmatched > 0:
             categorized_text.append(f"  - (unmatched/blank): {unmatched} ({(unmatched / total_rows) * 100:.1f}%)")
     
-    # Format open text column distributions (top values)
-    open_text_distribution = []
-    for col_name in open_text_cols:
-        value_counts = distributions.get(col_name, {})
-        open_text_distribution.append(f"\n{col_name} (Open Text):")
-        sorted_values = sorted(value_counts.items(), key=lambda x: x[1], reverse=True)
-        for value, count in sorted_values[:10]:
-            percentage = (count / total_rows) * 100
-            open_text_distribution.append(f"  - {value}: {count} ({percentage:.1f}%)")
+    # --- Open text columns: map-reduce summarization ---
+    print(f"Starting map-reduce summarization for {len(open_text_cols)} open text column(s)")
+    open_text_summaries = []
+    for col_name, instructions in open_text_cols.items():
+        values = [row.get(col_name, '') for row in parsed_file.rows if row.get(col_name, '').strip()]
+        summary = _summarize_open_text_chunks(col_name, values, instructions)
+        open_text_summaries.append(summary)
     
-    # Get sample rows (first 5 and last 5)
+    # --- Sample rows for cross-column context ---
     sample_size = min(5, total_rows)
     sample_rows = parsed_file.rows[:sample_size]
     if total_rows > sample_size:
         sample_rows.extend(parsed_file.rows[-sample_size:])
     
-    # Format sample rows
     sample_text = []
     for i, row in enumerate(sample_rows[:10]):
         sample_text.append(f"\nSample {i+1}:")
@@ -414,10 +407,10 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
 Categorized Column Results:
 {''.join(categorized_text) if categorized_text else '  (none)'}
 
-Open Text Column Distributions:
-{''.join(open_text_distribution) if open_text_distribution else '  (none)'}
+Open Text Column Analysis (summarized via map-reduce):
+{chr(10).join(open_text_summaries) if open_text_summaries else '  (none)'}
 
-Sample Processed Comments:
+Sample Processed Comments (for cross-column context):
 {''.join(sample_text)}"""
     
     return formatted_data
@@ -452,7 +445,7 @@ def _construct_aggregate_prompt(formatted_data: str,
 The following analysis columns were applied to each comment:
 {chr(10).join(column_descriptions)}
 
-Here is a summary of the processed data:
+Here is a summary of the processed data. Categorized columns include exact counts. Open text columns have been pre-summarized in chunks by a faster model — synthesize these chunk summaries into a cohesive analysis.
 
 {formatted_data}
 
@@ -460,9 +453,9 @@ Please provide a comprehensive aggregate analysis including:
 
 1. Categorized Column Breakdown: For each categorized column, present the exact counts and percentages from the data above. Highlight the dominant category and any notable splits.
 
-2. Open Text Themes and Patterns: For open text columns, identify the most prominent themes, topics, or patterns that emerge across all comments.
+2. Open Text Themes and Patterns: Synthesize the chunk summaries for each open text column into a unified thematic analysis. Identify the most prominent themes across all chunks, estimate their overall prevalence, and include representative quotes where available.
 
-3. Cross-Column Insights: Describe any interesting relationships between the categorized results and the open text themes.
+3. Cross-Column Insights: Describe any interesting relationships between the categorized results and the open text themes. For example, do certain themes correlate with certain categories?
 
 4. Notable Trends or Outliers: Highlight any interesting trends, unusual patterns, or outliers in the data.
 
@@ -471,6 +464,121 @@ Please provide a comprehensive aggregate analysis including:
 Be specific and cite percentages where applicable. Focus on actionable insights that would be valuable for understanding the overall sentiment and themes in this dataset."""
     
     return prompt
+
+
+def _call_bedrock_sonnet(prompt: str) -> str:
+    """
+    Call AWS Bedrock with Claude Sonnet model for chunk summarization.
+    
+    Args:
+        prompt: Summarization prompt
+        
+    Returns:
+        Summary text
+    """
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            response = _get_bedrock_runtime().invoke_model(
+                modelId=CLAUDE_SONNET_MODEL_ID,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1024,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ]
+                })
+            )
+            
+            response_body = json.loads(response['body'].read())
+            return response_body['content'][0]['text']
+        
+        except Exception as e:
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(2 ** attempt)
+                print(f"Sonnet call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                continue
+            else:
+                print(f"Sonnet call failed after {max_retries} attempts: {str(e)}")
+                raise e
+
+
+def _summarize_open_text_chunks(col_name: str, values: List[str], 
+                                 col_instructions: str) -> str:
+    """
+    Map-reduce summarization of open text column values.
+    
+    Chunks the values, sends each chunk to Haiku for a mini-summary,
+    then returns all chunk summaries combined for Opus to synthesize.
+    
+    Args:
+        col_name: Column name
+        values: All non-empty values for this column
+        col_instructions: The original instructions for this column
+        
+    Returns:
+        Combined chunk summaries as a formatted string
+    """
+    if not values:
+        return f"{col_name}: No responses."
+    
+    # If small enough, just include all values directly (no need for map step)
+    if len(values) <= CHUNK_SIZE:
+        numbered = [f"  {i+1}. {v}" for i, v in enumerate(values)]
+        return f"{col_name} — All {len(values)} responses:\n" + "\n".join(numbered)
+    
+    # Chunk the values
+    chunks = []
+    for i in range(0, len(values), CHUNK_SIZE):
+        chunks.append(values[i:i + CHUNK_SIZE])
+    
+    print(f"  Map step: {len(values)} values in {len(chunks)} chunks for '{col_name}'")
+    
+    def summarize_chunk(chunk_index: int, chunk: List[str]) -> str:
+        numbered = "\n".join(f"{i+1}. {v}" for i, v in enumerate(chunk))
+        prompt = f"""Below are {len(chunk)} responses from a public comment dataset for the column "{col_name}".
+Column description: {col_instructions}
+
+<responses>
+{numbered}
+</responses>
+
+Summarize the key themes, arguments, and patterns in these responses. For each theme you identify:
+- Name the theme clearly
+- Estimate how many of the {len(chunk)} responses relate to it
+- Give 1-2 representative short quotes
+
+Be concise but thorough. Focus on substance, not style."""
+        
+        summary = _call_bedrock_sonnet(prompt)
+        return f"Chunk {chunk_index + 1} ({len(chunk)} responses):\n{summary}"
+    
+    # Run chunk summarizations in parallel
+    chunk_summaries = [None] * len(chunks)
+    with ThreadPoolExecutor(max_workers=MAX_SUMMARY_WORKERS) as executor:
+        futures = {
+            executor.submit(summarize_chunk, i, chunk): i 
+            for i, chunk in enumerate(chunks)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                chunk_summaries[idx] = future.result()
+            except Exception as e:
+                print(f"  WARNING: Chunk {idx} summarization failed: {e}")
+                chunk_summaries[idx] = f"Chunk {idx + 1}: (summarization failed)"
+    
+    print(f"  Map step complete for '{col_name}': {sum(1 for s in chunk_summaries if s and 'failed' not in s)}/{len(chunks)} chunks succeeded")
+    
+    return f"{col_name} — {len(values)} total responses, summarized in {len(chunks)} chunks:\n\n" + \
+           "\n\n".join(s for s in chunk_summaries if s)
 
 
 def _call_bedrock_opus(prompt: str) -> str:
