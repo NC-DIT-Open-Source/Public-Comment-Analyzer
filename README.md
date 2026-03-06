@@ -21,7 +21,13 @@ A cloud-native AWS application that processes CSV and XLSX files containing publ
    # Edit .env and set AWS_PROFILE=your-profile-name
    ```
 
-2. Deploy everything:
+2. Install frontend dependencies (this also sets up pre-push test hooks via Husky):
+   ```bash
+   cd frontend/public-comment-app
+   npm install
+   ```
+
+3. Deploy everything:
    ```bash
    ./scripts/deploy.sh dev
    ```
