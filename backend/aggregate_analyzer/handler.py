@@ -7,6 +7,7 @@ from typing import Dict, Any, List
 from datetime import datetime, timezone
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
 
 # Import shared modules
 import sys
@@ -64,10 +65,13 @@ def _get_dynamodb():
 
 
 def _get_bedrock_runtime():
-    """Get or create Bedrock runtime client."""
+    """Get or create Bedrock runtime client with extended timeout for Opus."""
     global _bedrock_runtime
     if _bedrock_runtime is None:
-        _bedrock_runtime = boto3.client('bedrock-runtime')
+        _bedrock_runtime = boto3.client(
+            'bedrock-runtime',
+            config=Config(read_timeout=600, connect_timeout=10)
+        )
     return _bedrock_runtime
 
 
