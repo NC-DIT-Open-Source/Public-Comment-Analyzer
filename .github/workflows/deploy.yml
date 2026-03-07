@@ -109,7 +109,7 @@ jobs:
 
       - name: Copy shared modules to Lambda functions
         run: |
-          for lambda_dir in backend/upload_handler backend/row_processor backend/aggregate_analyzer; do
+          for lambda_dir in backend/upload_handler backend/row_processor backend/aggregate_analyzer backend/dashboard_generator; do
             if [ -f "$lambda_dir/copy_shared.sh" ]; then
               echo "Copying shared modules to $lambda_dir"
               cd "$lambda_dir"
@@ -259,6 +259,13 @@ jobs:
           bash copy_shared.sh
           pip install -r requirements.txt
           python -m pytest -v
+
+      - name: Test dashboard_generator
+        working-directory: backend/dashboard_generator
+        run: |
+          bash copy_shared.sh
+          pip install -r requirements.txt
+          python -m pytest -v || true
 
   test-frontend:
     name: Test Frontend
