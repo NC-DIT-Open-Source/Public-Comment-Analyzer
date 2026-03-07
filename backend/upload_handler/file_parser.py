@@ -71,51 +71,71 @@ class FileParser:
             ValueError: If file is empty or has invalid format
             UnicodeDecodeError: If file encoding cannot be determined
         """
-        try:
-            # Detect encoding
-            encoding = self._detect_encoding(file_path)
-            
-            headers = []
-            rows = []
-            
-            with open(file_path, 'r', encoding=encoding, newline='') as f:
-                reader = csv.DictReader(f)
-                headers = reader.fieldnames if reader.fieldnames else []
+        # Try multiple encodings in order of preference
+        encodings_to_try = []
+        
+        # First, try chardet detection
+        detected_encoding = self._detect_encoding(file_path)
+        if detected_encoding:
+            encodings_to_try.append(detected_encoding)
+        
+        # Add common fallback encodings
+        fallback_encodings = ['utf-8', 'latin-1', 'windows-1252', 'iso-8859-1', 'cp1252']
+        for enc in fallback_encodings:
+            if enc not in encodings_to_try:
+                encodings_to_try.append(enc)
+        
+        last_error = None
+        
+        for encoding in encodings_to_try:
+            try:
+                headers = []
+                rows = []
                 
-                if not headers:
-                    raise ValueError("CSV file has no headers")
+                with open(file_path, 'r', encoding=encoding, newline='') as f:
+                    reader = csv.DictReader(f)
+                    headers = reader.fieldnames if reader.fieldnames else []
+                    
+                    if not headers:
+                        raise ValueError("CSV file has no headers")
+                    
+                    for row_num, row in enumerate(reader, start=2):  # Start at 2 (after header)
+                        try:
+                            # Convert all values to strings and handle None values
+                            row_dict = {key: (str(value) if value is not None else '') 
+                                       for key, value in row.items()}
+                            rows.append(row_dict)
+                        except Exception as e:
+                            print(f"Warning: Error parsing CSV row {row_num}: {str(e)}")
+                            # Continue with other rows
+                            continue
                 
-                for row_num, row in enumerate(reader, start=2):  # Start at 2 (after header)
-                    try:
-                        # Convert all values to strings and handle None values
-                        row_dict = {key: (str(value) if value is not None else '') 
-                                   for key, value in row.items()}
-                        rows.append(row_dict)
-                    except Exception as e:
-                        print(f"Warning: Error parsing CSV row {row_num}: {str(e)}")
-                        # Continue with other rows
-                        continue
+                if not rows:
+                    print("Warning: CSV file has no data rows")
+                
+                print(f"Successfully parsed CSV with encoding: {encoding}")
+                return ParsedFile(
+                    headers=headers,
+                    rows=rows,
+                    row_count=len(rows)
+                )
             
-            if not rows:
-                print("Warning: CSV file has no data rows")
+            except UnicodeDecodeError as e:
+                print(f"Failed to decode CSV file with encoding {encoding}: {str(e)}")
+                last_error = e
+                continue  # Try next encoding
             
-            return ParsedFile(
-                headers=headers,
-                rows=rows,
-                row_count=len(rows)
-            )
+            except csv.Error as e:
+                print(f"ERROR: CSV parsing error with encoding {encoding}: {str(e)}")
+                raise ValueError(f"Invalid CSV format: {str(e)}") from e
+            
+            except Exception as e:
+                print(f"ERROR: Unexpected error parsing CSV with encoding {encoding}: {str(e)}")
+                raise
         
-        except UnicodeDecodeError as e:
-            print(f"ERROR: Failed to decode CSV file with encoding {encoding}")
-            raise ValueError(f"File encoding not supported. Please ensure file is UTF-8 or Latin-1 encoded.") from e
-        
-        except csv.Error as e:
-            print(f"ERROR: CSV parsing error: {str(e)}")
-            raise ValueError(f"Invalid CSV format: {str(e)}") from e
-        
-        except Exception as e:
-            print(f"ERROR: Unexpected error parsing CSV: {str(e)}")
-            raise
+        # If we get here, all encodings failed
+        print(f"ERROR: Failed to decode CSV file with any supported encoding")
+        raise ValueError(f"File encoding not supported. Tried: {', '.join(encodings_to_try)}. Please ensure file is properly encoded.") from last_error
     
     def _parse_xlsx(self, file_path: str) -> ParsedFile:
         """

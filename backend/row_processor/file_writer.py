@@ -35,11 +35,34 @@ class FileWriter:
         - Quoting fields containing commas, quotes, or newlines
         - Escaping quotes by doubling them
         - Proper line endings
+        
+        Raises:
+            IOError: If file cannot be written
+            ValueError: If headers or rows are invalid
         """
-        with open(output_path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=headers, quoting=csv.QUOTE_MINIMAL)
-            writer.writeheader()
-            writer.writerows(rows)
+        try:
+            if not headers:
+                raise ValueError("Cannot write CSV with empty headers")
+            
+            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers, quoting=csv.QUOTE_MINIMAL)
+                writer.writeheader()
+                
+                for row_num, row in enumerate(rows, start=2):  # Start at 2 (after header)
+                    try:
+                        writer.writerow(row)
+                    except Exception as e:
+                        print(f"Warning: Error writing CSV row {row_num}: {str(e)}")
+                        # Continue with other rows
+                        continue
+        
+        except IOError as e:
+            print(f"ERROR: Failed to write CSV file: {str(e)}")
+            raise IOError(f"Cannot write output file: {str(e)}") from e
+        
+        except Exception as e:
+            print(f"ERROR: Unexpected error writing CSV: {str(e)}")
+            raise
     
     def _write_xlsx(self, headers: List[str], rows: List[Dict[str, str]], 
                     output_path: str) -> None:
@@ -48,19 +71,40 @@ class FileWriter:
         
         Creates a new workbook with a single worksheet containing
         the headers and data rows. Empty strings are preserved as empty cells.
+        
+        Raises:
+            IOError: If file cannot be written
+            ValueError: If headers or rows are invalid
         """
-        workbook = Workbook()
-        worksheet = workbook.active
+        try:
+            if not headers:
+                raise ValueError("Cannot write XLSX with empty headers")
+            
+            workbook = Workbook()
+            worksheet = workbook.active
+            
+            # Write headers
+            worksheet.append(headers)
+            
+            # Write data rows
+            for row_num, row in enumerate(rows, start=2):  # Start at 2 (after header)
+                try:
+                    # Extract values in the same order as headers
+                    # Keep empty strings as empty strings (they'll be stored as empty cells)
+                    row_values = [row.get(header, '') for header in headers]
+                    worksheet.append(row_values)
+                except Exception as e:
+                    print(f"Warning: Error writing XLSX row {row_num}: {str(e)}")
+                    # Continue with other rows
+                    continue
+            
+            # Save workbook
+            workbook.save(output_path)
         
-        # Write headers
-        worksheet.append(headers)
+        except IOError as e:
+            print(f"ERROR: Failed to write XLSX file: {str(e)}")
+            raise IOError(f"Cannot write output file: {str(e)}") from e
         
-        # Write data rows
-        for row in rows:
-            # Extract values in the same order as headers
-            # Keep empty strings as empty strings (they'll be stored as empty cells)
-            row_values = [row.get(header, '') for header in headers]
-            worksheet.append(row_values)
-        
-        # Save workbook
-        workbook.save(output_path)
+        except Exception as e:
+            print(f"ERROR: Unexpected error writing XLSX: {str(e)}")
+            raise
