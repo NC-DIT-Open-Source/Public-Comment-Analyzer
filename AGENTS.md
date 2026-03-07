@@ -292,7 +292,7 @@ curl "${API_URL}api/status/test-job-id"
 
 ### Modifying Shared Modules
 1. Update code in `backend/shared/`
-2. Run `copy_shared.sh` in each Lambda directory (or let GitHub Actions handle it)
+2. Run `copy_shared.sh` in each Lambda directory (or preferably let GitHub Actions handle it)
 3. Commit and push to `main` - GitHub Actions will deploy automatically
 
 ### Frontend Changes
