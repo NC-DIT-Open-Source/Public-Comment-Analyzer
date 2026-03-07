@@ -1,5 +1,6 @@
 // Digital Commons Style Guide - Component Styles
-@import 'variables';
+@use 'sass:color';
+@use 'variables' as *;
 
 // ============================================
 // Buttons
@@ -16,7 +17,7 @@
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    background-color: lighten($color-primary, 10%);
+    background-color: color.adjust($color-primary, $lightness: 10%);
   }
 
   &:disabled {
@@ -36,7 +37,7 @@
   cursor: pointer;
 
   &:hover:not(:disabled) {
-    background-color: darken($color-secondary-light, 5%);
+    background-color: color.adjust($color-secondary-light, $lightness: -5%);
   }
 
   &:disabled {
@@ -121,26 +122,26 @@
   gap: $spacing-sm;
 
   &-info {
-    background-color: lighten($color-info, 45%);
+    background-color: color.adjust($color-info, $lightness: 45%);
     color: $color-info;
     border-left: 4px solid $color-info;
   }
 
   &-success {
-    background-color: lighten($color-success, 60%);
-    color: darken($color-success, 10%);
+    background-color: color.adjust($color-success, $lightness: 60%);
+    color: color.adjust($color-success, $lightness: -10%);
     border-left: 4px solid $color-success;
   }
 
   &-warning {
-    background-color: lighten($color-warning, 50%);
-    color: darken($color-warning, 10%);
+    background-color: color.adjust($color-warning, $lightness: 50%);
+    color: color.adjust($color-warning, $lightness: -10%);
     border-left: 4px solid $color-warning;
   }
 
   &-error {
-    background-color: lighten($color-error, 50%);
-    color: darken($color-error, 5%);
+    background-color: color.adjust($color-error, $lightness: 50%);
+    color: color.adjust($color-error, $lightness: -5%);
     border-left: 4px solid $color-error;
   }
 }

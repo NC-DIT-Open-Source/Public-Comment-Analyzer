@@ -19,7 +19,6 @@ Chart.register(...registerables);
 
 @Component({
   selector: 'app-results-viewer',
-  standalone: true,
   imports: [
     CommonModule,
     FormsModule,

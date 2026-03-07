@@ -9,7 +9,6 @@ import { FileUploadService, FileMetadata } from '../../services/file-upload.serv
 
 @Component({
   selector: 'app-file-upload',
-  standalone: true,
   imports: [
     CommonModule,
     MatCardModule,

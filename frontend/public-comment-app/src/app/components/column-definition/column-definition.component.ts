@@ -14,7 +14,6 @@ import { FileMetadata } from '../../services/file-upload.service';
 
 @Component({
   selector: 'app-column-definition',
-  standalone: true,
   imports: [
     CommonModule,
     RouterModule,

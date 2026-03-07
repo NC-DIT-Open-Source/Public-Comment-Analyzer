@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule } from '@angular/common/http/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { FileUploadComponent } from './file-upload.component';
 import { FileUploadService } from '../../services/file-upload.service';
 import { of, throwError } from 'rxjs';
@@ -13,8 +14,10 @@ describe('FileUploadComponent', () => {
     const fileUploadServiceSpy = jasmine.createSpyObj('FileUploadService', ['uploadFile']);
 
     await TestBed.configureTestingModule({
-      imports: [FileUploadComponent, HttpClientTestingModule],
+      imports: [FileUploadComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: FileUploadService, useValue: fileUploadServiceSpy }
       ]
     }).compileComponents();
@@ -74,7 +77,6 @@ describe('FileUploadComponent', () => {
 
     component['handleFile'](validFile);
     
-    // Wait for async operation
     await fixture.whenStable();
     expect(component.errorMessage).toBe('Upload failed');
     expect(component.selectedFile).toBeNull();

@@ -15,7 +15,6 @@ import { marked } from 'marked';
 
 @Component({
   selector: 'app-processing-monitor',
-  standalone: true,
   imports: [
     CommonModule,
     MatStepperModule,
