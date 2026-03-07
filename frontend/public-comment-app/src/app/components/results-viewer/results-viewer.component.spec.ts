@@ -4,16 +4,19 @@ import { RouterTestingModule } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
 import { ResultsViewerComponent } from './results-viewer.component';
 import { ResultsService, ResultsResponse } from '../../services/results.service';
+import { DashboardService } from '../../services/dashboard.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 describe('ResultsViewerComponent', () => {
   let component: ResultsViewerComponent;
   let fixture: ComponentFixture<ResultsViewerComponent>;
   let mockResultsService: jasmine.SpyObj<ResultsService>;
+  let mockDashboardService: jasmine.SpyObj<DashboardService>;
   let mockSnackBar: jasmine.SpyObj<MatSnackBar>;
 
   beforeEach(async () => {
     mockResultsService = jasmine.createSpyObj('ResultsService', ['getResults']);
+    mockDashboardService = jasmine.createSpyObj('DashboardService', ['generateDashboard']);
     mockSnackBar = jasmine.createSpyObj('MatSnackBar', ['open']);
 
     await TestBed.configureTestingModule({
@@ -24,6 +27,7 @@ describe('ResultsViewerComponent', () => {
       ],
       providers: [
         { provide: ResultsService, useValue: mockResultsService },
+        { provide: DashboardService, useValue: mockDashboardService },
         { provide: MatSnackBar, useValue: mockSnackBar }
       ]
     }).compileComponents();
