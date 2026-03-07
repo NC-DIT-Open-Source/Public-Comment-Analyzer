@@ -2,7 +2,7 @@
 
 A cloud-native AWS application that processes CSV and XLSX files containing public comments and generates AI-powered analysis using AWS Bedrock.
 
-**Live URL**: https://CLOUDFRONT_SUBDOMAIN.cloudfront.net/
+**Live URL**: [[REDACTED]](https://[REDACTED])
 
 ## Quick Start
 
@@ -46,27 +46,14 @@ export CERTIFICATE_ARN=arn:aws:acm:us-east-1:ACCOUNT:certificate/CERT_ID
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  CloudFront │────▶│ S3 (Frontend)│     │ API Gateway │
-│             │     └──────────────┘     └──────┬──────┘
-│             │                                  │
-│             │────────────────────────────────▶ │
-└─────────────┘                                  │
-                                                 ▼
-                                    ┌────────────────────┐
-                                    │  Lambda Functions  │
-                                    │  - Upload Handler  │
-                                    │  - Row Processor   │
-                                    │  - Aggregator      │
-                                    └────────┬───────────┘
-                                             │
-                        ┌────────────────────┼────────────────────┐
-                        ▼                    ▼                    ▼
-                   ┌─────────┐         ┌─────────┐         ┌──────────┐
-                   │   S3    │         │DynamoDB │         │ Bedrock  │
-                   │  Data   │         │  Jobs   │         │  Claude  │
-                   └─────────┘         └─────────┘         └──────────┘
+```mermaid
+graph TD
+    CF[CloudFront] -->|Static Assets| S3F[S3 Frontend]
+    CF -->|API Requests| APIGW[API Gateway]
+    APIGW --> LF[Lambda Functions<br/>Upload Handler<br/>Row Processor<br/>Aggregator]
+    LF --> S3D[S3 Data]
+    LF --> DDB[DynamoDB Jobs]
+    LF --> BR[Bedrock Claude]
 ```
 
 ### Components
@@ -244,11 +231,9 @@ cdk destroy --context environment=dev --profile $AWS_PROFILE
 
 ## Resources
 
-- **Live App**: https://CLOUDFRONT_SUBDOMAIN.cloudfront.net/
+- **Live App**: https://[REDACTED]
 - **Design System**: https://zeroheight.com/6cc837e20/p/638fcb-welcome
-- **AWS Account**: AWS_ACCOUNT_ID
 - **Region**: us-east-1
-- **CloudFront Distribution**: CLOUDFRONT_DIST_ID
 
 ## Requirements
 

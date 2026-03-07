@@ -100,6 +100,7 @@ class PublicCommentAnalyzerStack(Stack):
         self.upload_handler = self._create_upload_handler()
         self.row_processor = self._create_row_processor()
         self.aggregate_analyzer = self._create_aggregate_analyzer()
+        self.dashboard_generator = self._create_dashboard_generator()
         
         # Create API Gateway
         self.api = self._create_api_gateway()
@@ -322,6 +323,38 @@ class PublicCommentAnalyzerStack(Stack):
                         "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
                     ],
                     local=_PipBundling("../backend/aggregate_analyzer"),
+                ),
+            ),
+            role=self.lambda_role,
+            timeout=Duration.minutes(15),
+            memory_size=512,
+            environment={
+                "DATA_BUCKET": self.data_bucket.bucket_name,
+                "JOBS_TABLE": self.jobs_table.table_name,
+                "ENVIRONMENT": self.env_name,
+                "ALLOWED_ORIGIN": self.allowed_origin
+            }
+        )
+        
+        return function
+
+    def _create_dashboard_generator(self) -> lambda_.Function:
+        """Create Lambda function for custom dashboard generation."""
+        function = lambda_.Function(
+            self,
+            "DashboardGenerator",
+            function_name=f"PublicCommentAnalyzer-DashboardGenerator-{self.env_name}",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="handler.lambda_handler",
+            code=lambda_.Code.from_asset(
+                "../backend/dashboard_generator",
+                bundling=BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
+                    ],
+                    local=_PipBundling("../backend/dashboard_generator"),
                 ),
             ),
             role=self.lambda_role,
@@ -568,6 +601,28 @@ def lambda_handler(event, context):
         results_job_resource.add_method(
             "GET",
             apigateway.LambdaIntegration(self.aggregate_analyzer, proxy=True),
+            request_parameters={
+                "method.request.path.jobId": True
+            },
+            method_responses=[
+                apigateway.MethodResponse(
+                    status_code="200",
+                    response_parameters={
+                        "method.response.header.Access-Control-Allow-Origin": True
+                    }
+                ),
+                apigateway.MethodResponse(status_code="400"),
+                apigateway.MethodResponse(status_code="404"),
+                apigateway.MethodResponse(status_code="500")
+            ]
+        )
+        
+        # POST /api/dashboard/{jobId} - generate custom dashboard charts
+        dashboard_resource = api_resource.add_resource("dashboard")
+        dashboard_job_resource = dashboard_resource.add_resource("{jobId}")
+        dashboard_job_resource.add_method(
+            "POST",
+            apigateway.LambdaIntegration(self.dashboard_generator, proxy=True),
             request_parameters={
                 "method.request.path.jobId": True
             },
