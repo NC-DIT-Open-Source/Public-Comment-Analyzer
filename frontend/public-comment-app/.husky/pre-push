@@ -20,7 +20,7 @@ for lambda_dir in shared upload_handler row_processor aggregate_analyzer; do
         if [ -f "$dir/copy_shared.sh" ]; then
             bash "$dir/copy_shared.sh" > /dev/null 2>&1 || true
         fi
-        if ! python -m pytest "$dir"/test_*.py -q --tb=short; then
+        if ! (cd "$dir" && python -m pytest test_*.py -q --tb=short); then
             FAILED=1
         fi
         echo ""
