@@ -1,8 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { HttpClientTestingModule } from '@angular/common/http/testing';
-import { RouterTestingModule } from '@angular/router/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { ColumnDefinitionComponent } from './column-definition.component';
 import { AnalysisColumn, ProcessingService } from '../../services/processing.service';
 
@@ -15,9 +16,12 @@ describe('ColumnDefinitionComponent', () => {
       imports: [
         ColumnDefinitionComponent,
         ReactiveFormsModule,
-        BrowserAnimationsModule,
-        HttpClientTestingModule,
-        RouterTestingModule
+        BrowserAnimationsModule
+      ],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([])
       ]
     }).compileComponents();
 
@@ -198,7 +202,6 @@ describe('ColumnDefinitionComponent', () => {
       for (let i = 0; i < 50; i++) {
         component.addOption();
       }
-      // Started with 2, added 48 more (capped at 50)
       expect(component.optionsArray.length).toBeLessThanOrEqual(50);
     });
   });

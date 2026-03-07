@@ -1,4 +1,5 @@
-@import '../../../styles/variables';
+@use 'sass:color';
+@use '../../../styles/variables' as *;
 
 .processing-monitor-container {
   padding: $spacing-xl;
@@ -68,12 +69,12 @@
           .error-message {
             margin-top: $spacing-md;
             padding: $spacing-md;
-            background-color: lighten($color-error, 50%);
+            background-color: color.adjust($color-error, $lightness: 50%);
             border-radius: $border-radius;
             border-left: 4px solid $color-error;
 
             .error-text {
-              color: darken($color-error, 5%);
+              color: color.adjust($color-error, $lightness: -5%);
               margin: 0;
               font-size: 0.875rem;
             }
@@ -97,11 +98,11 @@
         .results-error {
           text-align: center;
           padding: $spacing-xl;
-          background: lighten($color-error, 50%);
+          background: color.adjust($color-error, $lightness: 50%);
           border-radius: $border-radius-lg;
 
           mat-icon { font-size: 40px; width: 40px; height: 40px; color: $color-error; }
-          p { color: darken($color-error, 5%); margin: $spacing-sm 0 $spacing-md; }
+          p { color: color.adjust($color-error, $lightness: -5%); margin: $spacing-sm 0 $spacing-md; }
         }
 
         .results-content {
@@ -167,14 +168,14 @@
     th, td { border: 1px solid $color-gray; padding: $spacing-md; text-align: left; }
     th { background-color: $color-primary; color: $color-white; font-weight: $font-weight-semibold; }
     tr:nth-child(even) { background-color: $color-gray-light; }
-    tr:hover { background-color: lighten($color-secondary-light, 3%); }
+    tr:hover { background-color: color.adjust($color-secondary-light, $lightness: 3%); }
   }
 
   strong, b { font-weight: $font-weight-semibold; color: $color-secondary; }
   em, i { font-style: italic; }
 
   code {
-    background-color: darken($color-gray-light, 5%);
+    background-color: color.adjust($color-gray-light, $lightness: -5%);
     padding: 2px 6px;
     border-radius: $border-radius;
     font-family: 'Courier New', monospace;

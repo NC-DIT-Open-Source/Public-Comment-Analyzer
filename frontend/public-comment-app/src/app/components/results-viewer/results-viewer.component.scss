@@ -1,4 +1,5 @@
-@import '../../../styles/variables';
+@use 'sass:color';
+@use '../../../styles/variables' as *;
 
 .results-viewer-container {
   padding: $spacing-xl;
@@ -23,7 +24,7 @@
     .error-card {
       text-align: center;
       padding: $spacing-xxl $spacing-xl;
-      background-color: lighten($color-error, 50%);
+      background-color: color.adjust($color-error, $lightness: 50%);
       border: 1px solid $color-error;
       border-radius: $border-radius-lg;
 
@@ -37,13 +38,13 @@
 
       h3 {
         margin: 0 0 $spacing-sm 0;
-        color: darken($color-error, 10%);
+        color: color.adjust($color-error, $lightness: -10%);
         font-weight: $font-weight-bold;
       }
 
       p {
         margin: 0 0 $spacing-xl 0;
-        color: darken($color-error, 5%);
+        color: color.adjust($color-error, $lightness: -5%);
       }
 
       button {
@@ -204,7 +205,7 @@
             }
 
             tr:hover {
-              background-color: lighten($color-secondary-light, 3%);
+              background-color: color.adjust($color-secondary-light, $lightness: 3%);
             }
           }
 
@@ -218,7 +219,7 @@
           }
 
           code {
-            background-color: darken($color-gray-light, 5%);
+            background-color: color.adjust($color-gray-light, $lightness: -5%);
             padding: 2px 6px;
             border-radius: $border-radius;
             font-family: 'Courier New', monospace;
@@ -277,7 +278,7 @@
             border-radius: $border-radius;
 
             &:hover {
-              background: darken($color-gray-dark, 10%);
+              background: color.adjust($color-gray-dark, $lightness: -10%);
             }
           }
         }
@@ -353,10 +354,10 @@
         gap: $spacing-sm;
         margin-top: $spacing-md;
         padding: $spacing-md;
-        background-color: lighten($color-error, 50%);
+        background-color: color.adjust($color-error, $lightness: 50%);
         border: 1px solid $color-error;
         border-radius: $border-radius;
-        color: darken($color-error, 10%);
+        color: color.adjust($color-error, $lightness: -10%);
 
         mat-icon {
           color: $color-error;

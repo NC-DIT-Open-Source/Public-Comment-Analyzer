@@ -1,4 +1,5 @@
-@import '../../../styles/variables';
+@use 'sass:color';
+@use '../../../styles/variables' as *;
 
 .column-definition-container {
   max-width: 900px;
@@ -173,7 +174,7 @@
       .option-tag {
         font-size: $font-size-breadcrumb;
         color: $color-primary;
-        background-color: lighten($color-secondary, 40%);
+        background-color: color.adjust($color-secondary, $lightness: 40%);
         padding: 2px 10px;
         border-radius: 12px;
 
@@ -211,10 +212,10 @@
   align-items: center;
   gap: $spacing-sm;
   padding: $spacing-md $spacing-lg;
-  background-color: lighten($color-error, 50%);
+  background-color: color.adjust($color-error, $lightness: 50%);
   border-radius: $border-radius;
   border-left: 4px solid $color-error;
-  color: darken($color-error, 5%);
+  color: color.adjust($color-error, $lightness: -5%);
   margin-top: $spacing-md;
 
   mat-icon {

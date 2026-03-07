@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { RouterTestingModule } from '@angular/router/testing';
+import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { ProcessingMonitorComponent } from './processing-monitor.component';
 import { ProcessingService, JobStatus } from '../../services/processing.service';
@@ -19,10 +19,10 @@ describe('ProcessingMonitorComponent', () => {
     await TestBed.configureTestingModule({
       imports: [
         ProcessingMonitorComponent,
-        BrowserAnimationsModule,
-        RouterTestingModule
+        BrowserAnimationsModule
       ],
       providers: [
+        provideRouter([]),
         { provide: ProcessingService, useValue: mockProcessingService },
         { provide: ResultsService, useValue: mockResultsService }
       ]

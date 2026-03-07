@@ -1,9 +1,9 @@
 /* Digital Commons Style Guide - Global Styles */
 
 // Import Design System
-@import 'styles/variables';
-@import 'styles/typography';
-@import 'styles/components';
+@use 'styles/variables' as *;
+@use 'styles/typography';
+@use 'styles/components';
 
 // ============================================
 // Global Resets
