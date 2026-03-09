@@ -22,7 +22,10 @@ describe('ProcessingMonitorComponent', () => {
         BrowserAnimationsModule
       ],
       providers: [
-        provideRouter([]),
+        provideRouter([
+          { path: 'upload', component: ProcessingMonitorComponent },
+          { path: 'processing/:jobId', component: ProcessingMonitorComponent }
+        ]),
         { provide: ProcessingService, useValue: mockProcessingService },
         { provide: ResultsService, useValue: mockResultsService }
       ]

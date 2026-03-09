@@ -60,27 +60,30 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // If jobId is already set (e.g., in tests), start polling immediately
+    if (this.jobId) {
+      this.startPolling();
+      return;
+    }
+
     // Get jobId from route parameter first, then fall back to state
     this.route.paramMap.pipe(takeUntil(this.destroy$)).subscribe(params => {
       const jobIdFromRoute = params.get('jobId');
       if (jobIdFromRoute) {
         this.jobId = jobIdFromRoute;
+        this.startPolling();
+      } else {
+        // Fall back to history state
+        const state = history.state;
+        if (state && state.jobId) {
+          this.jobId = state.jobId;
+          this.startPolling();
+        } else {
+          // No jobId found, redirect to upload
+          this.router.navigate(['/upload']);
+        }
       }
     });
-
-    if (!this.jobId) {
-      const state = history.state;
-      if (state && state.jobId) {
-        this.jobId = state.jobId;
-      }
-    }
-
-    if (this.jobId) {
-      this.startPolling();
-    } else {
-      // No jobId found, redirect to upload
-      this.router.navigate(['/upload']);
-    }
   }
 
   ngOnDestroy(): void {
