@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, interval, switchMap, takeWhile } from 'rxjs';
+import { Observable, interval, switchMap, takeWhile, startWith } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export interface CategoryOption {
@@ -51,6 +51,7 @@ export class ProcessingService {
 
   pollStatus(jobId: string, intervalMs: number = 2000): Observable<JobStatus> {
     return interval(intervalMs).pipe(
+      startWith(0), // Emit immediately, then at intervals
       switchMap(() => this.getStatus(jobId)),
       takeWhile(status => status.status === 'pending' || status.status === 'processing', true)
     );
