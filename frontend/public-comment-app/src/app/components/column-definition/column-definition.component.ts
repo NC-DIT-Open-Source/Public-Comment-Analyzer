@@ -254,9 +254,8 @@ export class ColumnDefinitionComponent implements OnInit {
     this.processingService.startProcessing(request).subscribe({
       next: (response) => {
         this.isProcessing = false;
-        this.router.navigate(['/processing'], {
+        this.router.navigate(['/processing', response.jobId], {
           state: {
-            jobId: response.jobId,
             fileMetadata: this.fileMetadata,
             fileName: this.fileName
           }
