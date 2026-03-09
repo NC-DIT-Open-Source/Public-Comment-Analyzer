@@ -1,6 +1,6 @@
 import { Component, Input, OnInit, OnDestroy, ViewEncapsulation } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { MatStepperModule } from '@angular/material/stepper';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatCardModule } from '@angular/material/card';
@@ -50,6 +50,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     private processingService: ProcessingService,
     private resultsService: ResultsService,
     private router: Router,
+    private route: ActivatedRoute,
     private sanitizer: DomSanitizer
   ) {
     const navigation = this.router.getCurrentNavigation();
@@ -59,6 +60,14 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // Get jobId from route parameter first, then fall back to state
+    this.route.paramMap.pipe(takeUntil(this.destroy$)).subscribe(params => {
+      const jobIdFromRoute = params.get('jobId');
+      if (jobIdFromRoute) {
+        this.jobId = jobIdFromRoute;
+      }
+    });
+
     if (!this.jobId) {
       const state = history.state;
       if (state && state.jobId) {
@@ -68,6 +77,9 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
 
     if (this.jobId) {
       this.startPolling();
+    } else {
+      // No jobId found, redirect to upload
+      this.router.navigate(['/upload']);
     }
   }
 
