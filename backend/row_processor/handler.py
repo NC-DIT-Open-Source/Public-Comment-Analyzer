@@ -448,8 +448,9 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Upload output file to S3
         _get_s3_client().upload_file(output_path, DATA_BUCKET, output_key)
         
-        # Update job status to completed
-        _update_job_status(job_id, 'completed', parsed_file.row_count, parsed_file.row_count)
+        # Update job status to completed with result file key
+        _update_job_status(job_id, 'completed', parsed_file.row_count, parsed_file.row_count, 
+                          result_file_key=output_key)
         
         # Clean up temp files
         os.unlink(input_path)
@@ -611,7 +612,8 @@ def _get_row_count(s3_key: str, file_type: str) -> int:
 
 
 def _update_job_status(job_id: str, status: str, completed_rows: int, 
-                      total_rows: int, errors: List[Dict[str, Any]] = None) -> None:
+                      total_rows: int, errors: List[Dict[str, Any]] = None,
+                      result_file_key: str = None) -> None:
     """
     Update job status in DynamoDB.
     
@@ -621,6 +623,7 @@ def _update_job_status(job_id: str, status: str, completed_rows: int,
         completed_rows: Number of completed rows
         total_rows: Total number of rows
         errors: List of error records with rowNumber, message, and errorType
+        result_file_key: S3 key for the result file (optional)
     """
     table = _get_dynamodb().Table(JOBS_TABLE_NAME)
     
@@ -636,6 +639,10 @@ def _update_job_status(job_id: str, status: str, completed_rows: int,
     if errors:
         update_expression += ", errors = :errors"
         expression_values[':errors'] = errors
+    
+    if result_file_key:
+        update_expression += ", resultFileKey = :resultFileKey"
+        expression_values[':resultFileKey'] = result_file_key
     
     table.update_item(
         Key={'jobId': job_id},
