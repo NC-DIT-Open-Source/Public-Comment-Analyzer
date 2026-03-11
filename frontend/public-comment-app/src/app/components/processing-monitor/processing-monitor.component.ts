@@ -99,13 +99,17 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (status) => {
+          console.log('Received status:', status);
           this.jobStatus = status;
           this.updateStepFromStatus(status);
 
-          if (status.status === 'completed' && !this.isComplete) {
-            this.isComplete = true;
-            this.currentStep = 3;
-            this.loadResults();
+          if (status.status === 'completed') {
+            if (!this.isComplete) {
+              console.log('Setting isComplete to true and loading results');
+              this.isComplete = true;
+              this.currentStep = 3;
+              this.loadResults();
+            }
           } else if (status.status === 'failed') {
             this.hasFailed = true;
           }
