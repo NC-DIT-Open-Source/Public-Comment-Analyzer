@@ -155,7 +155,7 @@ jobs:
     needs: [detect-changes, deploy-infrastructure]
     if: |
       always() && 
-      (needs.detect-changes.outputs.frontend == 'true' || needs.deploy-infrastructure.result == 'success') &&
+      needs.detect-changes.outputs.frontend == 'true' &&
       (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
     steps:
       - name: Checkout code
