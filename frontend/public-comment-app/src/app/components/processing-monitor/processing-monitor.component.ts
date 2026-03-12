@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, ViewEncapsulation } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ViewEncapsulation, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, ActivatedRoute } from '@angular/router';
 import { MatStepperModule } from '@angular/material/stepper';
@@ -51,7 +51,8 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     private resultsService: ResultsService,
     private router: Router,
     private route: ActivatedRoute,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private cdr: ChangeDetectorRef
   ) {
     const navigation = this.router.getCurrentNavigation();
     if (navigation?.extras.state) {
@@ -108,15 +109,18 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
               console.log('Setting isComplete to true and loading results');
               this.isComplete = true;
               this.currentStep = 3;
+              this.cdr.detectChanges(); // Force change detection
               this.loadResults();
             }
           } else if (status.status === 'failed') {
             this.hasFailed = true;
+            this.cdr.detectChanges(); // Force change detection
           }
         },
         error: (error) => {
           console.error('Error polling job status:', error);
           this.hasFailed = true;
+          this.cdr.detectChanges(); // Force change detection
         }
       });
   }
@@ -133,6 +137,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   async loadResults(): Promise<void> {
     this.isLoadingResults = true;
     this.resultsError = null;
+    this.cdr.detectChanges(); // Force change detection
 
     this.resultsService.getResults(this.jobId).subscribe({
       next: async (response) => {
@@ -142,22 +147,26 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
           this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
           this.isLoadingResults = false;
           this.analysisRetryCount = 0;
+          this.cdr.detectChanges(); // Force change detection
         } else if (response.analysisStatus === 'generating') {
           this.analysisRetryCount++;
           if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
             this.isLoadingResults = false;
             this.resultsError = 'Aggregate analysis is taking longer than expected. Your processed file is still available for download. You can retry the analysis or download your results now.';
+            this.cdr.detectChanges(); // Force change detection
           } else {
             this.analysisRetryTimer = setTimeout(() => this.loadResults(), 5000);
           }
         } else {
           this.isLoadingResults = false;
+          this.cdr.detectChanges(); // Force change detection
         }
       },
       error: (err) => {
         console.error('Error loading results:', err);
         this.resultsError = 'Failed to load results. Please try again.';
         this.isLoadingResults = false;
+        this.cdr.detectChanges(); // Force change detection
       }
     });
   }
