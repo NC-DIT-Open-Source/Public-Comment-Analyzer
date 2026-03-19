@@ -1,0 +1,230 @@
+@use 'sass:color';
+@use '../../../styles/variables' as *;
+
+.column-definition-container {
+  max-width: 900px;
+  margin: $spacing-xl auto;
+  padding: $spacing-xl;
+}
+
+.instructions {
+  color: $color-gray-dark;
+  margin-bottom: $spacing-lg;
+  font-size: $font-size-body;
+  line-height: $line-height-body;
+}
+
+.column-form {
+  margin-bottom: $spacing-xl;
+
+  .full-width {
+    width: 100%;
+  }
+
+  .type-toggle {
+    margin-bottom: $spacing-lg;
+
+    label {
+      display: block;
+      margin-bottom: $spacing-sm;
+      font-weight: $font-weight-bold;
+      color: $color-primary;
+      font-size: $font-size-body;
+    }
+  }
+
+  .options-section {
+    margin-bottom: $spacing-md;
+
+    .options-hint {
+      color: $color-gray-dark;
+      font-size: $font-size-breadcrumb;
+      margin-bottom: $spacing-md;
+    }
+
+    .option-row {
+      display: flex;
+      align-items: flex-start;
+      gap: $spacing-sm;
+      margin-bottom: $spacing-xs;
+
+      .option-value {
+        flex: 1;
+      }
+
+      .option-description {
+        flex: 2;
+      }
+    }
+
+    .add-option-btn {
+      margin-top: $spacing-sm;
+    }
+  }
+
+  .button-group {
+    display: flex;
+    gap: $spacing-md;
+    margin-top: $spacing-md;
+  }
+}
+
+.columns-list {
+  margin-top: $spacing-xl;
+
+  h3 {
+    color: $color-primary;
+    margin-bottom: $spacing-md;
+    font-size: $font-size-h5;
+    font-weight: $font-weight-bold;
+  }
+
+  .column-chips {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-md;
+  }
+
+  .column-chip {
+    background-color: $color-white;
+    border: 1px solid $color-gray;
+    border-radius: $border-radius-lg;
+    padding: $spacing-lg;
+    transition: all $transition-normal;
+    box-shadow: $shadow-sm;
+    height: auto;
+
+    &:hover {
+      background-color: $color-secondary-light;
+      border-color: $color-secondary;
+      box-shadow: $shadow-md;
+    }
+
+    .chip-content {
+      width: 100%;
+    }
+
+    .chip-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: $spacing-sm;
+
+      .chip-title-row {
+        display: flex;
+        align-items: center;
+        gap: $spacing-sm;
+      }
+
+      strong {
+        color: $color-primary;
+        font-size: $font-size-h6;
+        font-weight: $font-weight-bold;
+      }
+
+      .chip-type-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background-color: $color-gray;
+        color: $color-gray-dark;
+        font-weight: $font-weight-bold;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+
+        &.categorized {
+          background-color: $color-secondary;
+          color: $color-white;
+        }
+      }
+
+      .chip-actions {
+        display: flex;
+        gap: $spacing-xs;
+
+        button {
+          padding: $spacing-xs;
+          min-width: auto;
+          line-height: 1;
+
+          mat-icon {
+            font-size: 20px;
+            width: 20px;
+            height: 20px;
+          }
+        }
+      }
+    }
+
+    .chip-instructions {
+      color: $color-gray-dark;
+      font-size: $font-size-body;
+      line-height: $line-height-body;
+      padding-left: $spacing-md;
+      border-left: 3px solid $color-secondary;
+    }
+
+    .chip-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: $spacing-sm;
+      padding-left: $spacing-md;
+      border-left: 3px solid $color-secondary;
+
+      .option-tag {
+        font-size: $font-size-breadcrumb;
+        color: $color-primary;
+        background-color: color.adjust($color-secondary, $lightness: 40%);
+        padding: 2px 10px;
+        border-radius: 12px;
+
+        .option-desc {
+          color: $color-gray-dark;
+          font-style: italic;
+        }
+      }
+    }
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: $spacing-xxl $spacing-xl;
+  color: $color-gray-dark;
+
+  mat-icon {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    margin-bottom: $spacing-md;
+    opacity: 0.5;
+    color: $color-gray;
+  }
+
+  p {
+    font-size: $font-size-body;
+    margin: 0;
+  }
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: $spacing-md $spacing-lg;
+  background-color: color.adjust($color-error, $lightness: 50%);
+  border-radius: $border-radius;
+  border-left: 4px solid $color-error;
+  color: color.adjust($color-error, $lightness: -5%);
+  margin-top: $spacing-md;
+
+  mat-icon {
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+  }
+
+  span {
+    flex: 1;
+  }
+}

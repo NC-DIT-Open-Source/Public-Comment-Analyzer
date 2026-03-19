@@ -112,7 +112,7 @@ cd backend/upload_handler
 python -m pytest test_handler.py -v
 
 # Frontend
-cd frontend/public-comment-app
+cd frontend
 npm test
 ```
 
@@ -171,7 +171,7 @@ Located in `backend/shared/`:
 - `file_writer.py`: Writes results back to CSV/XLSX
 - `dynamodb_client.py`: DynamoDB operations wrapper
 
-Each Lambda has a `copy_shared.sh` script to copy shared modules during deployment.
+Shared modules are deployed as a Lambda Layer and automatically available to all Lambda functions at runtime.
 
 ### Frontend Components
 - `file-upload`: File selection and upload
@@ -292,11 +292,10 @@ curl "${API_URL}api/status/test-job-id"
 
 ### Modifying Shared Modules
 1. Update code in `backend/shared/`
-2. Run `copy_shared.sh` in each Lambda directory (or preferably let GitHub Actions handle it)
-3. Commit and push to `main` - GitHub Actions will deploy automatically
+2. Commit and push to `main` - GitHub Actions will deploy the updated Lambda Layer automatically
 
 ### Frontend Changes
-1. Make changes in `frontend/public-comment-app/src/`
+1. Make changes in `frontend/src/`
 2. Test locally: `npm start`
 3. Run tests: `npm test`
 4. Commit and push to `main` - GitHub Actions will build and deploy automatically

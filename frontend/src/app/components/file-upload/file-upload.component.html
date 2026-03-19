@@ -1,0 +1,104 @@
+<mat-card class="upload-card">
+  <mat-card-header>
+    <mat-card-title>Upload File</mat-card-title>
+    <mat-card-subtitle>Upload a CSV or XLSX file containing public comments</mat-card-subtitle>
+  </mat-card-header>
+
+  <mat-card-content>
+    <!-- Drag and Drop Upload Area -->
+    <div 
+      class="upload-area"
+      [class.dragging]="isDragging"
+      [class.has-file]="uploadedFileMetadata"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+      *ngIf="!uploadedFileMetadata">
+      
+      <mat-icon class="upload-icon">cloud_upload</mat-icon>
+      
+      <p class="upload-text">
+        Drag and drop your file here
+      </p>
+      
+      <p class="upload-subtext">or</p>
+      
+      <input 
+        type="file" 
+        #fileInput 
+        accept=".csv,.xlsx"
+        (change)="onFileSelected($event)"
+        style="display: none">
+      
+      <button 
+        mat-raised-button 
+        color="primary"
+        (click)="fileInput.click()"
+        [disabled]="isUploading">
+        <mat-icon>folder_open</mat-icon>
+        Choose File
+      </button>
+      
+      <p class="file-types">Supported formats: CSV, XLSX</p>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-container" *ngIf="isUploading">
+      <mat-spinner diameter="50"></mat-spinner>
+      <p>Uploading file...</p>
+    </div>
+
+    <!-- Error Message -->
+    <div class="error-message" *ngIf="errorMessage">
+      <mat-icon color="warn">error</mat-icon>
+      <span>{{ errorMessage }}</span>
+    </div>
+
+    <!-- Uploaded File Details -->
+    <div class="file-details" *ngIf="uploadedFileMetadata && !isUploading">
+      <mat-icon class="success-icon" color="primary">check_circle</mat-icon>
+      
+      <div class="details-content">
+        <h3>File Uploaded Successfully</h3>
+        
+        <div class="detail-row">
+          <span class="detail-label">File Name:</span>
+          <span class="detail-value">{{ selectedFile?.name }}</span>
+        </div>
+        
+        <div class="detail-row">
+          <span class="detail-label">File Size:</span>
+          <span class="detail-value">{{ formatFileSize(selectedFile?.size || 0) }}</span>
+        </div>
+        
+        <div class="detail-row">
+          <span class="detail-label">Total Rows:</span>
+          <span class="detail-value">{{ uploadedFileMetadata.rowCount }}</span>
+        </div>
+        
+        <div class="detail-row">
+          <span class="detail-label">Columns:</span>
+          <span class="detail-value">{{ uploadedFileMetadata.columns.length }}</span>
+        </div>
+        
+        <div class="columns-list">
+          <p class="columns-label">Column Headers:</p>
+          <div class="columns-chips">
+            <span class="column-chip" *ngFor="let column of uploadedFileMetadata.columns">
+              {{ column }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <button 
+        mat-stroked-button 
+        color="primary"
+        (click)="reset()"
+        class="reset-button">
+        <mat-icon>refresh</mat-icon>
+        Upload Different File
+      </button>
+    </div>
+  </mat-card-content>
+</mat-card>

@@ -1,0 +1,125 @@
+<div class="results-viewer-container">
+  <div class="loading-state" *ngIf="isLoading">
+    <mat-spinner></mat-spinner>
+    <p>Loading your results...</p>
+  </div>
+
+  <div class="error-state" *ngIf="error && !isLoading">
+    <mat-card class="error-card">
+      <mat-icon>error_outline</mat-icon>
+      <h3>Error Loading Results</h3>
+      <p>{{ error }}</p>
+      <button mat-raised-button color="primary" (click)="loadResults()">
+        <mat-icon>refresh</mat-icon>
+        Retry
+      </button>
+    </mat-card>
+  </div>
+
+  <div class="results-content" *ngIf="results && !isLoading">
+    <mat-card class="download-card">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>download</mat-icon>
+          Download Processed File
+        </mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>Your analyzed file is ready. Download it to view the original data with AI-generated analysis columns.</p>
+        <button mat-raised-button color="primary" (click)="downloadFile()">
+          <mat-icon>file_download</mat-icon>
+          Download File
+        </button>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="analysis-card">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>analytics</mat-icon>
+          Aggregate Analysis
+        </mat-card-title>
+        <button mat-icon-button (click)="copyAnalysis()" matTooltip="Copy to clipboard">
+          <mat-icon>content_copy</mat-icon>
+        </button>
+      </mat-card-header>
+      <mat-card-content>
+        <div class="analysis-text" [innerHTML]="renderedAnalysis"></div>
+      </mat-card-content>
+      <mat-card-actions>
+        <button mat-button (click)="copyAnalysis()">
+          <mat-icon>content_copy</mat-icon>
+          Copy Analysis
+        </button>
+      </mat-card-actions>
+    </mat-card>
+
+    <!-- Custom Dashboard Section -->
+    <mat-card class="dashboard-card">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>dashboard_customize</mat-icon>
+          Custom Insights
+        </mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p class="dashboard-description">
+          Want to dig deeper? Describe the charts or insights you'd like to see and we'll generate them from your data.
+        </p>
+        <div class="dashboard-input-area">
+          <mat-form-field appearance="outline" class="dashboard-prompt-field">
+            <mat-label>What would you like to visualize?</mat-label>
+            <textarea matInput
+                      [(ngModel)]="dashboardPrompt"
+                      rows="3"
+                      placeholder="e.g., Show me a pie chart of sentiment breakdown and a bar chart comparing the top themes"
+                      [disabled]="isDashboardLoading"
+                      maxlength="2000"
+                      aria-label="Describe the charts or insights you want to generate"></textarea>
+            <mat-hint align="end">{{ dashboardPrompt.length }} / 2000</mat-hint>
+          </mat-form-field>
+          <button mat-raised-button
+                  color="primary"
+                  class="generate-btn"
+                  (click)="generateDashboard()"
+                  [disabled]="isDashboardLoading || !dashboardPrompt.trim()">
+            <mat-icon *ngIf="!isDashboardLoading">auto_awesome</mat-icon>
+            <mat-spinner *ngIf="isDashboardLoading" diameter="20"></mat-spinner>
+            {{ isDashboardLoading ? 'Generating...' : 'Generate Custom Insights' }}
+          </button>
+        </div>
+
+        <!-- Dashboard Error -->
+        <div class="dashboard-error" *ngIf="dashboardError">
+          <mat-icon>warning</mat-icon>
+          <span>{{ dashboardError }}</span>
+        </div>
+
+        <!-- Dashboard Results -->
+        <div class="dashboard-results" *ngIf="dashboardCharts.length > 0 || dashboardNarrative">
+          <div class="charts-grid">
+            <div class="chart-container" *ngFor="let chart of dashboardCharts; let i = index">
+              <h4 class="chart-title">{{ chart.title }}</h4>
+              <p class="chart-description" *ngIf="chart.description">{{ chart.description }}</p>
+              <div class="chart-wrapper">
+                <canvas #chartCanvas></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-narrative" *ngIf="dashboardNarrative">
+            <h4>
+              <mat-icon>insights</mat-icon>
+              Key Takeaways
+            </h4>
+            <div class="narrative-text" [innerHTML]="dashboardNarrative"></div>
+            <button mat-button (click)="copyDashboardNarrative()">
+              <mat-icon>content_copy</mat-icon>
+              Copy Narrative
+            </button>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+</div>
