@@ -1,0 +1,152 @@
+<div class="column-definition-container">
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Define Analysis Columns</mat-card-title>
+      <mat-card-subtitle *ngIf="fileMetadata">
+        File: {{ fileName }} ({{ fileMetadata.rowCount }} rows, {{ fileMetadata.columns.length }} columns)
+      </mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      <p class="instructions">Add custom columns to analyze your comments. Each column can be open text (AI writes a free response) or categorized (AI must pick from your predefined options).</p>
+
+      <form [formGroup]="columnForm" (ngSubmit)="addColumn()" class="column-form">
+        <div class="type-toggle">
+          <label id="column-type-label">Column Type</label>
+          <mat-button-toggle-group
+            [value]="columnType"
+            (change)="onColumnTypeChange($event.value)"
+            aria-labelledby="column-type-label">
+            <mat-button-toggle value="open_text">Open Text</mat-button-toggle>
+            <mat-button-toggle value="categorized">Categorized</mat-button-toggle>
+          </mat-button-toggle-group>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Column Name</mat-label>
+          <input matInput formControlName="name" placeholder="e.g., Sentiment, Category, Stance">
+          <mat-error *ngIf="columnForm.get('name')?.hasError('required')">
+            Column name is required
+          </mat-error>
+        </mat-form-field>
+
+        <!-- Open Text mode -->
+        <ng-container *ngIf="columnType === 'open_text'">
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Analysis Instructions</mat-label>
+            <textarea
+              matInput
+              formControlName="instructions"
+              rows="3"
+              placeholder="e.g., Summarize the main point of this comment in one sentence">
+            </textarea>
+            <mat-error *ngIf="columnForm.get('instructions')?.hasError('required')">
+              Instructions are required
+            </mat-error>
+          </mat-form-field>
+        </ng-container>
+
+        <!-- Categorized mode -->
+        <ng-container *ngIf="columnType === 'categorized'">
+          <div class="options-section">
+            <p class="options-hint">Define the options the AI must choose from. Each option needs a value (what gets written) and a description (when to pick it).</p>
+            <div formArrayName="options">
+              <div *ngFor="let option of optionsArray.controls; let i = index"
+                   [formGroupName]="i"
+                   class="option-row">
+                <mat-form-field appearance="outline" class="option-value">
+                  <mat-label>Option {{ i + 1 }}</mat-label>
+                  <input matInput formControlName="value" placeholder="e.g., Pro">
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="option-description">
+                  <mat-label>When to choose this</mat-label>
+                  <input matInput formControlName="description" placeholder="e.g., If the comment supports the proposal">
+                </mat-form-field>
+                <button mat-icon-button type="button" (click)="removeOption(i)"
+                        [disabled]="optionsArray.length <= 2"
+                        aria-label="Remove option">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+            </div>
+            <button mat-stroked-button type="button" (click)="addOption()"
+                    [disabled]="optionsArray.length >= 50"
+                    class="add-option-btn">
+              <mat-icon>add</mat-icon> Add Option
+            </button>
+          </div>
+        </ng-container>
+
+        <div class="button-group">
+          <button mat-raised-button color="primary" type="submit">
+            {{ isEditing ? 'Update Column' : 'Add Column' }}
+          </button>
+          <button mat-button type="button" *ngIf="isEditing" (click)="cancelEdit()">
+            Cancel
+          </button>
+        </div>
+      </form>
+
+      <div class="columns-list" *ngIf="columns.length > 0">
+        <h3>Defined Columns ({{ columns.length }})</h3>
+        <mat-chip-listbox class="column-chips">
+          <mat-chip-option *ngFor="let column of columns; let i = index" class="column-chip">
+            <div class="chip-content">
+              <div class="chip-header">
+                <div class="chip-title-row">
+                  <strong>{{ column.name }}</strong>
+                  <span class="chip-type-badge" [class.categorized]="column.type === 'categorized'">
+                    {{ column.type === 'categorized' ? 'Categorized' : 'Open Text' }}
+                  </span>
+                </div>
+                <div class="chip-actions">
+                  <button mat-icon-button (click)="editColumn(i)" aria-label="Edit column">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button (click)="removeColumn(i)" aria-label="Remove column">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+              </div>
+              <ng-container *ngIf="column.type === 'categorized' && column.options; else openTextDisplay">
+                <div class="chip-options">
+                  <span class="option-tag" *ngFor="let opt of column.options">
+                    {{ opt.value }} <span class="option-desc">— {{ opt.description }}</span>
+                  </span>
+                </div>
+              </ng-container>
+              <ng-template #openTextDisplay>
+                <div class="chip-instructions">{{ column.instructions }}</div>
+              </ng-template>
+            </div>
+          </mat-chip-option>
+        </mat-chip-listbox>
+      </div>
+
+      <div class="empty-state" *ngIf="columns.length === 0">
+        <mat-icon>info</mat-icon>
+        <p>No columns defined yet. Add your first analysis column above.</p>
+      </div>
+
+      <div class="error-message" *ngIf="errorMessage">
+        <mat-icon>error</mat-icon>
+        <span>{{ errorMessage }}</span>
+      </div>
+    </mat-card-content>
+
+    <mat-card-actions>
+      <button
+        mat-raised-button
+        color="accent"
+        (click)="startProcessing()"
+        [disabled]="columns.length === 0 || isProcessing">
+        <mat-icon>play_arrow</mat-icon>
+        {{ isProcessing ? 'Starting...' : 'Start Processing' }}
+      </button>
+      <button mat-button routerLink="/upload">
+        <mat-icon>arrow_back</mat-icon>
+        Back to Upload
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</div>

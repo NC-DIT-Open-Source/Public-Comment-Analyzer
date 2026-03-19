@@ -23,7 +23,7 @@ A cloud-native AWS application that processes CSV and XLSX files containing publ
 
 2. Install frontend dependencies (this also sets up pre-push test hooks via Husky):
    ```bash
-   cd frontend/public-comment-app
+   cd frontend
    npm install
    ```
 
@@ -73,8 +73,7 @@ graph TD
 │   ├── row_processor/       # Row-by-row AI analysis (500 concurrent)
 │   ├── aggregate_analyzer/  # Aggregate sentiment analysis
 │   └── shared/              # File parser, writer, DynamoDB client
-├── frontend/
-│   └── public-comment-app/  # Angular application
+├── frontend/               # Angular application
 ├── infrastructure/          # AWS CDK (Python)
 │   ├── app.py
 │   └── stacks/
@@ -110,22 +109,67 @@ python -m pytest test_handler.py test_integration.py -v
 
 ### Frontend Testing
 ```bash
-cd frontend/public-comment-app
+cd frontend
 npm test
 ```
 
 ### Local Development
+
+You can run the full stack locally using AWS SAM CLI. This runs all Lambda functions in Docker containers on your machine while still talking to real AWS services (S3, DynamoDB, Bedrock) via your AWS profile.
+
+#### Prerequisites
+- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) (`brew install aws-sam-cli`)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) running
+- AWS CLI configured with your profile
+- `.env` file with `AWS_PROFILE` set
+
+#### Quick start
 ```bash
-# Backend (with venv)
-cd backend/upload_handler
-python -m venv .venv
+# 1. Activate venv and synth the CDK template (only needed once, or after infra changes)
 source .venv/bin/activate
-pip install -r requirements.txt
+cd infrastructure && cdk synth --profile ncdit && cd ..
+
+# 2. Start local API Gateway + Lambda-to-Lambda endpoint
+bash scripts/start-local.sh
+
+# 3. In a separate terminal, start the frontend
+cd frontend
+npm install   # first time only
+npm start     # http://localhost:4200
+```
+
+The script starts two SAM processes:
+- **Port 3000** — local API Gateway (frontend talks to this)
+- **Port 3001** — local Lambda invoke endpoint (for Lambda-to-Lambda calls, e.g. RowProcessor → AggregateAnalyzer)
+
+#### API routes available locally
+| Method | URL | Lambda |
+|--------|-----|--------|
+| POST | `http://localhost:3000/api/upload` | UploadHandler |
+| POST | `http://localhost:3000/api/process` | RowProcessor |
+| GET | `http://localhost:3000/api/status/{jobId}` | StatusHandler |
+| GET | `http://localhost:3000/api/results/{jobId}` | AggregateAnalyzer |
+| POST | `http://localhost:3000/api/dashboard/{jobId}` | DashboardGenerator |
+| POST | `http://localhost:3000/api/auth/validate` | AuthHandler |
+
+#### How it works
+- Lambda code changes are picked up automatically on the next request (no restart needed)
+- Infrastructure changes (CDK stack) require re-running `cdk synth`
+- `local-env.json` overrides env vars for local runs (CORS set to `*`, Lambda-to-Lambda routing to localhost)
+- All AWS service calls (S3, DynamoDB, Bedrock, Secrets Manager) go to your real AWS account via your configured profile
+
+#### Running tests only (no Docker needed)
+```bash
+# Backend
+source .venv/bin/activate
+cd backend/shared && python -m pytest -v
+cd ../upload_handler && python -m pytest -v
+cd ../row_processor && python -m pytest -v
+cd ../aggregate_analyzer && python -m pytest -v
 
 # Frontend
-cd frontend/public-comment-app
-npm install
-npm start  # Runs on http://localhost:4200
+cd frontend
+npm test
 ```
 
 ## Deployment
@@ -164,7 +208,7 @@ cdk deploy --context environment=dev --profile $AWS_PROFILE
 
 #### Frontend Only
 ```bash
-cd frontend/public-comment-app
+cd frontend
 npm run build:prod
 npm run deploy
 ```
@@ -207,7 +251,7 @@ aws logs tail /aws/lambda/PublicCommentAnalyzer-AggregateAnalyzer-dev --follow -
 
 ### Frontend shows 403
 ```bash
-cd frontend/public-comment-app
+cd frontend
 npm run deploy
 ```
 

@@ -1,0 +1,169 @@
+<div class="processing-monitor-container">
+  <mat-card class="monitor-card">
+    <mat-card-header>
+      <mat-card-title>Processing Your File</mat-card-title>
+    </mat-card-header>
+
+    <mat-card-content>
+      <!-- Stepper as visual progress indicator only -->
+      <mat-stepper [selectedIndex]="currentStep" orientation="horizontal" #stepper [linear]="false">
+        <ng-template matStepperIcon="edit"><mat-icon>check</mat-icon></ng-template>
+        <ng-template matStepperIcon="done"><mat-icon>check</mat-icon></ng-template>
+
+        <mat-step label="Queued" [completed]="currentStep > 0" [editable]="false"></mat-step>
+        <mat-step label="Processing" [completed]="currentStep > 1" [editable]="false"></mat-step>
+        <mat-step label="Analyzing" [completed]="currentStep > 2" [editable]="false"></mat-step>
+        <mat-step label="Complete" [completed]="currentStep >= 3" [editable]="false"></mat-step>
+      </mat-stepper>
+
+      <!-- Status content below the stepper -->
+      <div class="step-content">
+        <!-- Queued -->
+        <ng-container *ngIf="currentStep === 0 && !hasFailed">
+          <mat-icon class="step-icon">schedule</mat-icon>
+          <p>Your file is queued for processing</p>
+        </ng-container>
+
+        <!-- Processing -->
+        <ng-container *ngIf="currentStep === 1">
+          <mat-icon class="step-icon" *ngIf="!hasFailed">sync</mat-icon>
+          <mat-icon class="step-icon error" *ngIf="hasFailed">error</mat-icon>
+          <p>{{ statusMessage }}</p>
+
+          <div class="progress-section" *ngIf="jobStatus && !hasFailed">
+            <mat-progress-bar
+              mode="determinate"
+              [value]="progressPercentage">
+            </mat-progress-bar>
+            <div class="progress-info">
+              <span class="progress-text">{{ progressPercentage }}% complete</span>
+              <span class="row-count">{{ jobStatus.completedRows }} / {{ jobStatus.totalRows }} rows</span>
+            </div>
+          </div>
+
+          <div class="error-message" *ngIf="hasFailed">
+            <p class="error-text">{{ jobStatus?.error || 'An error occurred during processing' }}</p>
+          </div>
+        </ng-container>
+
+        <!-- Analyzing -->
+        <ng-container *ngIf="currentStep === 2 && !hasFailed">
+          <mat-icon class="step-icon">analytics</mat-icon>
+          <p>Generating aggregate analysis. This may take up to 10 minutes.</p>
+        </ng-container>
+
+        <!-- Complete -->
+        <ng-container *ngIf="currentStep >= 3 && !hasFailed">
+          <mat-icon class="step-icon success">check_circle</mat-icon>
+          <p>Your analysis is ready!</p>
+        </ng-container>
+      </div>
+
+      <!-- Results Section -->
+      <div class="results-section" *ngIf="isComplete">
+
+        <!-- Loading results -->
+        <div class="loading-results" *ngIf="isLoadingResults">
+          <mat-spinner diameter="40"></mat-spinner>
+          <p>Loading analysis results...</p>
+        </div>
+
+        <!-- Results error -->
+        <div class="results-error" *ngIf="resultsError">
+          <mat-icon color="warn">error</mat-icon>
+          <p>{{ resultsError }}</p>
+          <div class="results-actions">
+            <button mat-raised-button color="primary" (click)="downloadResults()" *ngIf="results?.downloadUrl">
+              <mat-icon>download</mat-icon>
+              Download CSV
+            </button>
+            <button mat-raised-button color="accent" (click)="retryResults()">
+              <mat-icon>refresh</mat-icon> Retry Analysis
+            </button>
+          </div>
+        </div>
+
+        <!-- Results loaded -->
+        <div class="results-content" *ngIf="results && !isLoadingResults">
+          <div class="results-actions">
+            <button mat-raised-button color="primary" (click)="downloadResults()" [disabled]="!results.downloadUrl">
+              <mat-icon>download</mat-icon>
+              Download CSV
+            </button>
+          </div>
+
+          <div class="aggregate-analysis" *ngIf="renderedAnalysis">
+            <h3>Aggregate Analysis</h3>
+            <div class="analysis-content markdown-body" [innerHTML]="renderedAnalysis"></div>
+          </div>
+
+          <!-- Custom Dashboard Section -->
+          <div class="dashboard-section">
+            <h3>
+              <mat-icon>dashboard_customize</mat-icon>
+              Custom Insights
+            </h3>
+            <p class="dashboard-description">
+              Want to dig deeper? Describe the charts or insights you'd like to see and we'll generate them from your data.
+            </p>
+            <div class="dashboard-input-area">
+              <mat-form-field appearance="outline" class="dashboard-prompt-field">
+                <mat-label>What would you like to visualize?</mat-label>
+                <textarea matInput
+                          [(ngModel)]="dashboardPrompt"
+                          rows="3"
+                          placeholder="e.g., Show me a pie chart of sentiment breakdown and a bar chart comparing the top themes"
+                          [disabled]="isDashboardLoading"
+                          maxlength="2000"
+                          aria-label="Describe the charts or insights you want to generate"></textarea>
+                <mat-hint align="end">{{ dashboardPrompt.length }} / 2000</mat-hint>
+              </mat-form-field>
+              <div class="generate-btn-row">
+                <button mat-raised-button
+                        color="primary"
+                        class="generate-btn"
+                        (click)="generateDashboard()"
+                        [disabled]="isDashboardLoading || !dashboardPrompt.trim()">
+                  <mat-icon *ngIf="!isDashboardLoading">auto_awesome</mat-icon>
+                  <mat-spinner *ngIf="isDashboardLoading" diameter="18"></mat-spinner>
+                  <span>{{ isDashboardLoading ? 'Generating...' : 'Generate Custom Insights' }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Dashboard Error -->
+            <div class="dashboard-error" *ngIf="dashboardError">
+              <mat-icon>warning</mat-icon>
+              <span>{{ dashboardError }}</span>
+            </div>
+
+            <!-- Dashboard Results -->
+            <div class="dashboard-results" *ngIf="dashboardCharts.length > 0 || dashboardNarrative">
+              <div class="charts-grid">
+                <div class="chart-container" *ngFor="let chart of dashboardCharts; let i = index">
+                  <h4 class="chart-title">{{ chart.title }}</h4>
+                  <p class="chart-description" *ngIf="chart.description">{{ chart.description }}</p>
+                  <div class="chart-wrapper">
+                    <canvas #chartCanvas></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dashboard-narrative" *ngIf="dashboardNarrative">
+                <h4>
+                  <mat-icon>insights</mat-icon>
+                  Key Takeaways
+                </h4>
+                <div class="narrative-text" [innerHTML]="dashboardNarrative"></div>
+                <button mat-button (click)="copyDashboardNarrative()">
+                  <mat-icon>content_copy</mat-icon>
+                  Copy Narrative
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+</div>

@@ -9,31 +9,14 @@ from datetime import datetime, timezone
 import boto3
 from botocore.exceptions import ClientError
 
-# Import shared modules
+# Shared modules are provided via Lambda Layer (/opt/python/) at runtime.
+# For local testing, fall back to the sibling shared/ directory.
 import sys
-sys.path.append('/opt/python')  # Lambda layer path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 
-try:
-    from file_parser import FileParser, ParsedFile
-    from file_writer import FileWriter
-except ImportError:
-    # Fallback for local testing
-    import importlib.util
-    shared_path = os.path.join(os.path.dirname(__file__), '..', 'shared')
-    
-    spec = importlib.util.spec_from_file_location("file_parser", 
-                                                   os.path.join(shared_path, "file_parser.py"))
-    file_parser_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(file_parser_module)
-    FileParser = file_parser_module.FileParser
-    ParsedFile = file_parser_module.ParsedFile
-    
-    spec = importlib.util.spec_from_file_location("file_writer", 
-                                                   os.path.join(shared_path, "file_writer.py"))
-    file_writer_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(file_writer_module)
-    FileWriter = file_writer_module.FileWriter
+from auth import validate_access_key, build_unauthorized_response
+from file_parser import FileParser, ParsedFile
+from file_writer import FileWriter
 
 
 # Environment variables
@@ -98,6 +81,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Check if this is an async invocation (has 'asyncProcessing' flag)
     if event.get('asyncProcessing'):
         return _process_async(event, context)
+
+    # Validate access key for API Gateway invocations
+    if not validate_access_key(event):
+        return build_unauthorized_response(_cors_origin())
     
     # This is an API Gateway invocation - create job and return immediately
     try:
@@ -302,7 +289,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                  input_key, output_key)
         
         # Invoke this Lambda asynchronously to do the actual processing
-        lambda_client = boto3.client('lambda')
+        local_endpoint = os.environ.get('LOCAL_LAMBDA_ENDPOINT')
+        if not local_endpoint and os.environ.get('AWS_SAM_LOCAL') == 'true':
+            local_endpoint = 'http://host.docker.internal:3001'
+        if local_endpoint:
+            lambda_client = boto3.client('lambda', endpoint_url=local_endpoint, use_ssl=False)
+        else:
+            lambda_client = boto3.client('lambda')
         lambda_client.invoke(
             FunctionName=context.function_name,
             InvocationType='Event',  # Async invocation
@@ -662,7 +655,15 @@ def _trigger_aggregate_analysis(job_id: str) -> None:
         return
 
     try:
-        lambda_client = boto3.client('lambda')
+        # If running locally via SAM, route to local Lambda endpoint
+        local_endpoint = os.environ.get('LOCAL_LAMBDA_ENDPOINT')
+        if not local_endpoint and os.environ.get('AWS_SAM_LOCAL') == 'true':
+            local_endpoint = 'http://host.docker.internal:3001'
+        if local_endpoint:
+            lambda_client = boto3.client('lambda', endpoint_url=local_endpoint, use_ssl=False)
+        else:
+            lambda_client = boto3.client('lambda')
+
         lambda_client.invoke(
             FunctionName=function_name,
             InvocationType='Event',  # Fire-and-forget
