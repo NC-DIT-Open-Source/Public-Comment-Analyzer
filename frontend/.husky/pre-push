@@ -17,9 +17,6 @@ for lambda_dir in shared upload_handler row_processor aggregate_analyzer; do
     dir="backend/$lambda_dir"
     if ls "$dir"/test_*.py 1>/dev/null 2>&1; then
         echo "▶ Testing backend/$lambda_dir..."
-        if [ -f "$dir/copy_shared.sh" ]; then
-            bash "$dir/copy_shared.sh" > /dev/null 2>&1 || true
-        fi
         if ! (cd "$dir" && python -m pytest test_*.py -q --tb=short); then
             FAILED=1
         fi
@@ -28,7 +25,7 @@ for lambda_dir in shared upload_handler row_processor aggregate_analyzer; do
 done
 
 # --- Frontend tests ---
-FE_DIR="frontend/public-comment-app"
+FE_DIR="frontend"
 if [ -d "$FE_DIR/node_modules" ]; then
     echo "▶ Testing frontend..."
     if ! (cd "$FE_DIR" && npx ng test --watch=false --browsers=ChromeHeadless); then
@@ -36,7 +33,7 @@ if [ -d "$FE_DIR/node_modules" ]; then
     fi
     echo ""
 else
-    echo "⚠ Skipping frontend tests (run npm install in frontend/public-comment-app first)"
+    echo "⚠ Skipping frontend tests (run npm install in frontend first)"
     echo ""
 fi
 

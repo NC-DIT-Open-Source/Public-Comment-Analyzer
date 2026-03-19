@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, ViewEncapsulation, ChangeDetectorRef, ViewChildren, QueryList, ElementRef } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ViewEncapsulation, ChangeDetectorRef, ViewChildren, QueryList, ElementRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -131,10 +131,10 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
 
           if (status.status === 'completed') {
             if (!this.isComplete) {
-              console.log('Setting isComplete to true and loading results');
+              console.log('Processing complete, loading analysis results...');
               this.isComplete = true;
-              this.currentStep = 3;
-              this.cdr.detectChanges(); // Force change detection
+              this.currentStep = 2; // "Analyzing" — will move to 3 when results load
+              this.cdr.detectChanges();
               this.loadResults();
             }
           } else if (status.status === 'failed') {
@@ -154,25 +154,28 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     switch (status.status) {
       case 'pending': this.currentStep = 0; break;
       case 'processing': this.currentStep = 1; break;
-      case 'completed': this.currentStep = 3; break;
+      case 'completed': this.currentStep = 2; break; // Stay on "Analyzing" until results load
       case 'failed': this.currentStep = 1; break;
     }
   }
 
-  async loadResults(): Promise<void> {
+  loadResults(): void {
     this.isLoadingResults = true;
     this.resultsError = null;
     this.cdr.detectChanges(); // Force change detection
 
     this.resultsService.getResults(this.jobId).subscribe({
-      next: async (response) => {
+      next: (response) => {
         this.results = response;
         if (response.aggregateAnalysis) {
-          const html = await marked.parse(response.aggregateAnalysis);
-          this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
-          this.isLoadingResults = false;
-          this.analysisRetryCount = 0;
-          this.cdr.detectChanges(); // Force change detection
+          const result = marked.parse(response.aggregateAnalysis);
+          Promise.resolve(result).then((html: string) => {
+            this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
+            this.isLoadingResults = false;
+            this.analysisRetryCount = 0;
+            this.currentStep = 3; // Now truly complete
+            this.cdr.detectChanges();
+          });
         } else if (response.analysisStatus === 'generating') {
           this.analysisRetryCount++;
           if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
@@ -223,7 +226,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     }
   }
 
-  async generateDashboard(): Promise<void> {
+  generateDashboard(): void {
     if (!this.dashboardPrompt.trim() || !this.jobId) return;
 
     this.isDashboardLoading = true;
@@ -231,18 +234,24 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     this.destroyCharts();
 
     this.dashboardService.generateDashboard(this.jobId, this.dashboardPrompt).subscribe({
-      next: async (response: DashboardResponse) => {
+      next: (response: DashboardResponse) => {
         this.dashboardCharts = response.charts || [];
         this.dashboardRawNarrative = response.narrative || '';
+        const parseAndRender = () => {
+          this.isDashboardLoading = false;
+          this.cdr.detectChanges();
+          // Render charts after Angular updates the DOM
+          setTimeout(() => this.renderCharts(), 100);
+        };
         if (this.dashboardRawNarrative) {
-          const html = await marked.parse(this.dashboardRawNarrative);
-          this.dashboardNarrative = this.sanitizer.bypassSecurityTrustHtml(html);
+          const result = marked.parse(this.dashboardRawNarrative);
+          Promise.resolve(result).then((html: string) => {
+            this.dashboardNarrative = this.sanitizer.bypassSecurityTrustHtml(html);
+            parseAndRender();
+          });
+        } else {
+          parseAndRender();
         }
-        this.isDashboardLoading = false;
-        this.cdr.detectChanges();
-
-        // Render charts after Angular updates the DOM
-        setTimeout(() => this.renderCharts(), 100);
       },
       error: (err) => {
         console.error('Dashboard generation failed:', err);

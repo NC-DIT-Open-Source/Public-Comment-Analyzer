@@ -12,7 +12,7 @@
     "deploy": "npm run build:prod && node deploy.js",
     "deploy:dry-run": "npm run build:prod && node deploy.js --dry-run",
     "verify-build": "node verify-build.js",
-    "prepare": "cd ../.. && husky frontend/public-comment-app/.husky"
+    "prepare": "cd .. && husky frontend/.husky"
   },
   "private": true,
   "dependencies": {

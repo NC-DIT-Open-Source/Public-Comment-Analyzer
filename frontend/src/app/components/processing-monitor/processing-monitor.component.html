@@ -5,51 +5,59 @@
     </mat-card-header>
 
     <mat-card-content>
-      <mat-stepper [selectedIndex]="currentStep" orientation="horizontal" #stepper>
-        <mat-step label="Queued" [completed]="currentStep > 0">
-          <div class="step-content">
-            <mat-icon class="step-icon">schedule</mat-icon>
-            <p>Your file is queued for processing</p>
-          </div>
-        </mat-step>
+      <!-- Stepper as visual progress indicator only -->
+      <mat-stepper [selectedIndex]="currentStep" orientation="horizontal" #stepper [linear]="false">
+        <ng-template matStepperIcon="edit"><mat-icon>check</mat-icon></ng-template>
+        <ng-template matStepperIcon="done"><mat-icon>check</mat-icon></ng-template>
 
-        <mat-step label="Processing" [completed]="currentStep > 1">
-          <div class="step-content">
-            <mat-icon class="step-icon" *ngIf="!hasFailed">sync</mat-icon>
-            <mat-icon class="step-icon error" *ngIf="hasFailed">error</mat-icon>
-            <p>{{ statusMessage }}</p>
-
-            <div class="progress-section" *ngIf="jobStatus && !hasFailed">
-              <mat-progress-bar
-                mode="determinate"
-                [value]="progressPercentage">
-              </mat-progress-bar>
-              <div class="progress-info">
-                <span class="progress-text">{{ progressPercentage }}% complete</span>
-                <span class="row-count">{{ jobStatus.completedRows }} / {{ jobStatus.totalRows }} rows</span>
-              </div>
-            </div>
-
-            <div class="error-message" *ngIf="hasFailed">
-              <p class="error-text">{{ jobStatus?.error || 'An error occurred during processing' }}</p>
-            </div>
-          </div>
-        </mat-step>
-
-        <mat-step label="Analyzing" [completed]="currentStep > 2">
-          <div class="step-content">
-            <mat-icon class="step-icon">analytics</mat-icon>
-            <p>Generating aggregate analysis</p>
-          </div>
-        </mat-step>
-
-        <mat-step label="Complete" [completed]="isComplete">
-          <div class="step-content">
-            <mat-icon class="step-icon success">check_circle</mat-icon>
-            <p>Your analysis is ready!</p>
-          </div>
-        </mat-step>
+        <mat-step label="Queued" [completed]="currentStep > 0" [editable]="false"></mat-step>
+        <mat-step label="Processing" [completed]="currentStep > 1" [editable]="false"></mat-step>
+        <mat-step label="Analyzing" [completed]="currentStep > 2" [editable]="false"></mat-step>
+        <mat-step label="Complete" [completed]="currentStep >= 3" [editable]="false"></mat-step>
       </mat-stepper>
+
+      <!-- Status content below the stepper -->
+      <div class="step-content">
+        <!-- Queued -->
+        <ng-container *ngIf="currentStep === 0 && !hasFailed">
+          <mat-icon class="step-icon">schedule</mat-icon>
+          <p>Your file is queued for processing</p>
+        </ng-container>
+
+        <!-- Processing -->
+        <ng-container *ngIf="currentStep === 1">
+          <mat-icon class="step-icon" *ngIf="!hasFailed">sync</mat-icon>
+          <mat-icon class="step-icon error" *ngIf="hasFailed">error</mat-icon>
+          <p>{{ statusMessage }}</p>
+
+          <div class="progress-section" *ngIf="jobStatus && !hasFailed">
+            <mat-progress-bar
+              mode="determinate"
+              [value]="progressPercentage">
+            </mat-progress-bar>
+            <div class="progress-info">
+              <span class="progress-text">{{ progressPercentage }}% complete</span>
+              <span class="row-count">{{ jobStatus.completedRows }} / {{ jobStatus.totalRows }} rows</span>
+            </div>
+          </div>
+
+          <div class="error-message" *ngIf="hasFailed">
+            <p class="error-text">{{ jobStatus?.error || 'An error occurred during processing' }}</p>
+          </div>
+        </ng-container>
+
+        <!-- Analyzing -->
+        <ng-container *ngIf="currentStep === 2 && !hasFailed">
+          <mat-icon class="step-icon">analytics</mat-icon>
+          <p>Generating aggregate analysis. This may take up to 10 minutes.</p>
+        </ng-container>
+
+        <!-- Complete -->
+        <ng-container *ngIf="currentStep >= 3 && !hasFailed">
+          <mat-icon class="step-icon success">check_circle</mat-icon>
+          <p>Your analysis is ready!</p>
+        </ng-container>
+      </div>
 
       <!-- Results Section -->
       <div class="results-section" *ngIf="isComplete">
@@ -110,15 +118,17 @@
                           aria-label="Describe the charts or insights you want to generate"></textarea>
                 <mat-hint align="end">{{ dashboardPrompt.length }} / 2000</mat-hint>
               </mat-form-field>
-              <button mat-raised-button
-                      color="primary"
-                      class="generate-btn"
-                      (click)="generateDashboard()"
-                      [disabled]="isDashboardLoading || !dashboardPrompt.trim()">
-                <mat-icon *ngIf="!isDashboardLoading">auto_awesome</mat-icon>
-                <mat-spinner *ngIf="isDashboardLoading" diameter="20"></mat-spinner>
-                {{ isDashboardLoading ? 'Generating...' : 'Generate Custom Insights' }}
-              </button>
+              <div class="generate-btn-row">
+                <button mat-raised-button
+                        color="primary"
+                        class="generate-btn"
+                        (click)="generateDashboard()"
+                        [disabled]="isDashboardLoading || !dashboardPrompt.trim()">
+                  <mat-icon *ngIf="!isDashboardLoading">auto_awesome</mat-icon>
+                  <mat-spinner *ngIf="isDashboardLoading" diameter="18"></mat-spinner>
+                  <span>{{ isDashboardLoading ? 'Generating...' : 'Generate Custom Insights' }}</span>
+                </button>
+              </div>
             </div>
 
             <!-- Dashboard Error -->

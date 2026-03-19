@@ -1,0 +1,106 @@
+@use '../../../styles/variables' as *;
+
+.gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: $color-primary;
+}
+
+.gate-modal {
+  background: $color-white;
+  border-radius: $border-radius-lg;
+  padding: $spacing-xxl $spacing-xl;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: $shadow-lg;
+}
+
+.gate-logo {
+  height: 48px;
+  margin-bottom: $spacing-lg;
+  // Invert the white logo so it shows on white background
+  filter: brightness(0) saturate(100%) invert(12%) sepia(40%) saturate(2000%) hue-rotate(180deg) brightness(90%);
+}
+
+h2 {
+  margin: 0 0 $spacing-xs;
+  font-size: $font-size-h5;
+  font-weight: $font-weight-bold;
+  color: $color-primary;
+}
+
+.gate-subtitle {
+  margin: 0 0 $spacing-lg;
+  color: $color-gray-dark;
+  font-size: 0.95rem;
+}
+
+.gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.gate-input {
+  padding: 0.75rem 1rem;
+  border: 2px solid $color-gray;
+  border-radius: $border-radius;
+  font-size: 1rem;
+  font-family: $font-family-primary;
+  transition: border-color $transition-fast;
+  text-align: center;
+
+  &:focus {
+    outline: none;
+    border-color: $color-secondary-dark-text;
+    box-shadow: 0 0 0 3px rgba(30, 121, 200, 0.15);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.gate-error {
+  color: $color-error;
+  font-size: 0.875rem;
+  font-weight: $font-weight-semibold;
+}
+
+.gate-button {
+  padding: 0.75rem;
+  background-color: $color-primary;
+  color: $color-white;
+  border: none;
+  border-radius: $border-radius;
+  font-size: 1rem;
+  font-weight: $font-weight-semibold;
+  font-family: $font-family-primary;
+  cursor: pointer;
+  transition: background-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background-color: $color-secondary-dark;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}

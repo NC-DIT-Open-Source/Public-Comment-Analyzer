@@ -341,7 +341,7 @@ if [ "$ALL_CHECKS_PASSED" = true ]; then
   echo -e "${GREEN}✅ All checks passed! Deployment is healthy.${NC}"
   echo ""
   echo "Next steps:"
-  echo "  1. Deploy frontend: cd frontend/public-comment-app && npm run deploy"
+  echo "  1. Deploy frontend: cd frontend && npm run deploy"
   echo "  2. Access application: $CLOUDFRONT_URL"
   echo "  3. Test complete workflow with sample data"
   exit 0

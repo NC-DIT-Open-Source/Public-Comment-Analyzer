@@ -1,4 +1,6 @@
-<div class="app-container">
+<app-access-gate *ngIf="!(authService.authenticated$ | async)"></app-access-gate>
+
+<div class="app-container" *ngIf="authService.authenticated$ | async">
   <header class="app-header">
     <div class="header-content">
       <img src="assets/white-dit-logo.png" alt="NC DIT Logo" class="logo">

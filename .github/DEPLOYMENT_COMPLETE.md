@@ -80,9 +80,9 @@ gh run watch
 ### Modified Files
 - `README.md` - Added CI/CD section
 - `.gitignore` - Removed package-lock.json
-- `frontend/public-comment-app/package-lock.json` - Now tracked
-- `frontend/public-comment-app/src/app/app.component.ts` - Updated title
-- `frontend/public-comment-app/src/app/app.component.spec.ts` - Updated test
+- `frontend/package-lock.json` - Now tracked
+- `frontend/src/app/app.component.ts` - Updated title
+- `frontend/src/app/app.component.spec.ts` - Updated test
 
 ## Deployment Flow
 

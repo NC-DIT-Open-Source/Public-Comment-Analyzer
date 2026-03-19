@@ -197,7 +197,7 @@ Then future GitHub Actions deployments will work.
 **Problem:** Missing dependencies or build errors.
 
 **Solution:**
-1. Test build locally: `cd frontend/public-comment-app && npm run build:prod`
+1. Test build locally: `cd frontend && npm run build:prod`
 2. Ensure package-lock.json is committed
 3. Check Node.js version (should be 18)
 

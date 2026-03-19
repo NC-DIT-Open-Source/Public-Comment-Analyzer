@@ -1,0 +1,29 @@
+<div class="gate-overlay">
+  <div class="gate-modal" role="dialog" aria-labelledby="gate-title" aria-modal="true">
+    <img src="assets/white-dit-logo.png" alt="NC DIT Logo" class="gate-logo">
+    <h2 id="gate-title">Public Comment Analyzer</h2>
+    <p class="gate-subtitle">Enter the access password to continue.</p>
+
+    <form (ngSubmit)="submit()" class="gate-form">
+      <label for="gate-password" class="sr-only">Access Password</label>
+      <input
+        id="gate-password"
+        type="password"
+        [(ngModel)]="password"
+        name="password"
+        placeholder="Access password"
+        class="gate-input"
+        [disabled]="loading"
+        autocomplete="off"
+        autofocus
+      />
+
+      <div class="gate-error" *ngIf="error" role="alert">{{ error }}</div>
+
+      <button type="submit" class="gate-button" [disabled]="loading">
+        <span *ngIf="!loading">Continue</span>
+        <span *ngIf="loading">Validating...</span>
+      </button>
+    </form>
+  </div>
+</div>
