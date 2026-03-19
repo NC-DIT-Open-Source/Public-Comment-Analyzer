@@ -64,9 +64,9 @@ yarn-error.log*
 yarn.lock
 
 # Angular
-frontend/public-comment-app/dist/
-frontend/public-comment-app/.angular/
-frontend/public-comment-app/coverage/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
 
 # IDE
 .vscode/
@@ -84,6 +84,7 @@ Thumbs.db
 .env.local
 .env.production
 *.pem
+local-env.json
 
 # AWS
 .aws-sam/
