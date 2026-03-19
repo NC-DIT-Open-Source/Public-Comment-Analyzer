@@ -1,5 +1,6 @@
-import { Component, Input, OnInit, OnDestroy, ViewEncapsulation, ChangeDetectorRef } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ViewEncapsulation, ChangeDetectorRef, ViewChildren, QueryList, ElementRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { MatStepperModule } from '@angular/material/stepper';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
@@ -7,22 +8,33 @@ import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ProcessingService, JobStatus } from '../../services/processing.service';
 import { ResultsService, ResultsResponse } from '../../services/results.service';
+import { DashboardService, ChartDefinition, DashboardResponse } from '../../services/dashboard.service';
 import { Subject, takeUntil } from 'rxjs';
 import { marked } from 'marked';
+import { Chart, registerables } from 'chart.js';
+
+Chart.register(...registerables);
 
 @Component({
   selector: 'app-processing-monitor',
   imports: [
     CommonModule,
+    FormsModule,
     MatStepperModule,
     MatProgressBarModule,
     MatCardModule,
     MatIconModule,
     MatButtonModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSnackBarModule
   ],
   templateUrl: './processing-monitor.component.html',
   styleUrl: './processing-monitor.component.scss',
@@ -30,6 +42,7 @@ import { marked } from 'marked';
 })
 export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   @Input() jobId: string = '';
+  @ViewChildren('chartCanvas') chartCanvases!: QueryList<ElementRef<HTMLCanvasElement>>;
 
   jobStatus: JobStatus | null = null;
   currentStep: number = 0;
@@ -46,13 +59,24 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   private analysisRetryCount: number = 0;
   private readonly MAX_ANALYSIS_RETRIES = 60; // 60 retries * 5s = 5 minutes max wait
 
+  // Dashboard state
+  dashboardPrompt: string = '';
+  dashboardCharts: ChartDefinition[] = [];
+  dashboardNarrative: SafeHtml = '';
+  dashboardRawNarrative: string = '';
+  isDashboardLoading: boolean = false;
+  dashboardError: string | null = null;
+  private chartInstances: Chart[] = [];
+
   constructor(
     private processingService: ProcessingService,
     private resultsService: ResultsService,
+    private dashboardService: DashboardService,
     private router: Router,
     private route: ActivatedRoute,
     private sanitizer: DomSanitizer,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private snackBar: MatSnackBar
   ) {
     const navigation = this.router.getCurrentNavigation();
     if (navigation?.extras.state) {
@@ -93,6 +117,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     if (this.analysisRetryTimer) {
       clearTimeout(this.analysisRetryTimer);
     }
+    this.destroyCharts();
   }
 
   startPolling(): void {
@@ -106,10 +131,10 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
 
           if (status.status === 'completed') {
             if (!this.isComplete) {
-              console.log('Setting isComplete to true and loading results');
+              console.log('Processing complete, loading analysis results...');
               this.isComplete = true;
-              this.currentStep = 3;
-              this.cdr.detectChanges(); // Force change detection
+              this.currentStep = 2; // "Analyzing" — will move to 3 when results load
+              this.cdr.detectChanges();
               this.loadResults();
             }
           } else if (status.status === 'failed') {
@@ -129,25 +154,28 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     switch (status.status) {
       case 'pending': this.currentStep = 0; break;
       case 'processing': this.currentStep = 1; break;
-      case 'completed': this.currentStep = 3; break;
+      case 'completed': this.currentStep = 2; break; // Stay on "Analyzing" until results load
       case 'failed': this.currentStep = 1; break;
     }
   }
 
-  async loadResults(): Promise<void> {
+  loadResults(): void {
     this.isLoadingResults = true;
     this.resultsError = null;
     this.cdr.detectChanges(); // Force change detection
 
     this.resultsService.getResults(this.jobId).subscribe({
-      next: async (response) => {
+      next: (response) => {
         this.results = response;
         if (response.aggregateAnalysis) {
-          const html = await marked.parse(response.aggregateAnalysis);
-          this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
-          this.isLoadingResults = false;
-          this.analysisRetryCount = 0;
-          this.cdr.detectChanges(); // Force change detection
+          const result = marked.parse(response.aggregateAnalysis);
+          Promise.resolve(result).then((html: string) => {
+            this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
+            this.isLoadingResults = false;
+            this.analysisRetryCount = 0;
+            this.currentStep = 3; // Now truly complete
+            this.cdr.detectChanges();
+          });
         } else if (response.analysisStatus === 'generating') {
           this.analysisRetryCount++;
           if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
@@ -195,6 +223,81 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
       case 'completed': return 'Processing complete!';
       case 'failed': return this.jobStatus.error || 'Processing failed. Please try again.';
       default: return 'Unknown status';
+    }
+  }
+
+  generateDashboard(): void {
+    if (!this.dashboardPrompt.trim() || !this.jobId) return;
+
+    this.isDashboardLoading = true;
+    this.dashboardError = null;
+    this.destroyCharts();
+
+    this.dashboardService.generateDashboard(this.jobId, this.dashboardPrompt).subscribe({
+      next: (response: DashboardResponse) => {
+        this.dashboardCharts = response.charts || [];
+        this.dashboardRawNarrative = response.narrative || '';
+        const parseAndRender = () => {
+          this.isDashboardLoading = false;
+          this.cdr.detectChanges();
+          // Render charts after Angular updates the DOM
+          setTimeout(() => this.renderCharts(), 100);
+        };
+        if (this.dashboardRawNarrative) {
+          const result = marked.parse(this.dashboardRawNarrative);
+          Promise.resolve(result).then((html: string) => {
+            this.dashboardNarrative = this.sanitizer.bypassSecurityTrustHtml(html);
+            parseAndRender();
+          });
+        } else {
+          parseAndRender();
+        }
+      },
+      error: (err) => {
+        console.error('Dashboard generation failed:', err);
+        this.dashboardError = err.error?.error?.message || 'Failed to generate dashboard. Please try again.';
+        this.isDashboardLoading = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private renderCharts(): void {
+    this.destroyCharts();
+    const canvases = this.chartCanvases?.toArray() || [];
+    
+    canvases.forEach((canvasRef, index) => {
+      if (index < this.dashboardCharts.length) {
+        const chartDef = this.dashboardCharts[index];
+        const ctx = canvasRef.nativeElement.getContext('2d');
+        if (ctx && chartDef.config) {
+          try {
+            const config = { ...chartDef.config };
+            // Ensure responsive
+            if (!config.options) config.options = {};
+            config.options.responsive = true;
+            config.options.maintainAspectRatio = false;
+            
+            const chart = new Chart(ctx, config);
+            this.chartInstances.push(chart);
+          } catch (e) {
+            console.error(`Failed to render chart ${index}:`, e);
+          }
+        }
+      }
+    });
+  }
+
+  private destroyCharts(): void {
+    this.chartInstances.forEach(c => c.destroy());
+    this.chartInstances = [];
+  }
+
+  copyDashboardNarrative(): void {
+    if (this.dashboardRawNarrative) {
+      navigator.clipboard.writeText(this.dashboardRawNarrative).then(() => {
+        this.snackBar.open('Dashboard narrative copied to clipboard', 'Close', { duration: 3000 });
+      });
     }
   }
 }

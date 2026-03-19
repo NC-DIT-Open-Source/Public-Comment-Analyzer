@@ -88,10 +88,10 @@ echo "   CloudFront domain: $CLOUDFRONT_DOMAIN"
 echo "   Distribution ID: $CLOUDFRONT_DIST_ID"
 
 # Build and deploy frontend
-if [ -d "../frontend/public-comment-app" ]; then
+if [ -d "../frontend" ]; then
   echo ""
   echo "🎨 Building and deploying frontend..."
-  cd ../frontend/public-comment-app
+  cd ../frontend
   npm install
   npm run build:prod
   

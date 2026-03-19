@@ -100,7 +100,7 @@ describe('ProcessingMonitorComponent', () => {
       expect(component.isComplete).toBeFalsy();
     }));
 
-    it('should update status to completed', fakeAsync(() => {
+    it('should update status to completed', async () => {
       const mockStatus: JobStatus = {
         status: 'completed',
         progress: 100,
@@ -115,11 +115,12 @@ describe('ProcessingMonitorComponent', () => {
 
       component.jobId = 'test-job';
       component.ngOnInit();
-      tick();
+      // Wait for marked.parse() Promise to resolve
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       expect(component.currentStep).toBe(3);
       expect(component.isComplete).toBeTruthy();
-    }));
+    });
 
     it('should handle failed status', fakeAsync(() => {
       const mockStatus: JobStatus = {
@@ -289,7 +290,7 @@ describe('ProcessingMonitorComponent', () => {
   });
 
   describe('Display', () => {
-    it('should display completion notification when complete', fakeAsync(() => {
+    it('should display completion notification when complete', (done) => {
       const mockStatus: JobStatus = {
         status: 'completed',
         progress: 100,
@@ -303,13 +304,18 @@ describe('ProcessingMonitorComponent', () => {
       }));
 
       component.jobId = 'test-job';
+      fixture.detectChanges(); // Initial change detection
       component.ngOnInit();
-      tick();
-      fixture.detectChanges();
 
-      const compiled = fixture.nativeElement;
-      expect(compiled.textContent).toContain('Your analysis is ready!');
-    }));
+      setTimeout(() => {
+        fixture.detectChanges();
+        fixture.detectChanges(); // Second pass for nested *ngIf updates
+        const compiled = fixture.nativeElement;
+        expect(component.currentStep).toBe(3);
+        expect(compiled.textContent).toContain('Your analysis is ready!');
+        done();
+      }, 500);
+    });
 
     it('should display progress percentage', fakeAsync(() => {
       const mockStatus: JobStatus = {

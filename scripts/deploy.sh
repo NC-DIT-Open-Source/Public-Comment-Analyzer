@@ -39,9 +39,9 @@ echo "Frontend bucket: $FRONTEND_BUCKET"
 echo "CloudFront distribution: $CLOUDFRONT_DIST"
 
 # Build and deploy frontend (if exists)
-if [ -d "../frontend/public-comment-app" ]; then
+if [ -d "../frontend" ]; then
   echo "Building and deploying frontend..."
-  cd ../frontend/public-comment-app
+  cd ../frontend
   npm install
   npm run build
   

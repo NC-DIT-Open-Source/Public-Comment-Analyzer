@@ -9,14 +9,13 @@ import tempfile
 from typing import Dict, Any
 import boto3
 
-# Import from shared module (assuming it's in the Lambda layer or copied to the package)
-try:
-    from file_parser import FileParser
-except ImportError:
-    # If running locally or shared module not in layer, try relative import
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
-    from file_parser import FileParser
+# Shared modules are provided via Lambda Layer (/opt/python/) at runtime.
+# For local testing, fall back to the sibling shared/ directory.
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
+
+from file_parser import FileParser
+from auth import validate_access_key, build_unauthorized_response
 
 s3_client = boto3.client('s3')
 
@@ -178,6 +177,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     print("=== UPLOAD HANDLER START ===")
     print(f"Event keys: {list(event.keys())}")
     print(f"Request ID: {getattr(context, 'aws_request_id', 'N/A')}")
+
+    # Validate access key
+    if not validate_access_key(event):
+        return build_unauthorized_response(_cors_origin())
     
     try:
         # Extract content type and body

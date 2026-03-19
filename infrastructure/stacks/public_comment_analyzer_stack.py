@@ -1,5 +1,6 @@
 """Main CDK stack for Public Comment Analyzer infrastructure."""
 
+import aws_cdk as cdk
 from aws_cdk import (
     Stack,
     Duration,
@@ -16,9 +17,11 @@ from aws_cdk import (
     aws_cloudfront_origins as origins,
     aws_iam as iam,
     aws_certificatemanager as acm,
+    aws_secretsmanager as secretsmanager,
 )
 from constructs import Construct
 import jsii
+import json
 import os
 import subprocess
 
@@ -48,14 +51,52 @@ class _PipBundling:
             if platform.system() != "Linux":
                 cmd[2:2] = ["--platform", "manylinux2014_x86_64", "--only-binary=:all:"]
             subprocess.check_call(cmd)
-        # Copy source files
+        # Copy source files (exclude test files and copy_shared.sh)
         import shutil
         for item in os.listdir(source):
             full = os.path.join(source, item)
             dest = os.path.join(output_dir, item)
-            if os.path.isfile(full):
+            if os.path.isfile(full) and not item.startswith('test_') and item != 'copy_shared.sh':
                 shutil.copy2(full, dest)
         return True
+
+
+@jsii.implements(ILocalBundling)
+class _LayerBundling:
+    """Local bundling for Lambda Layer that installs shared code + deps into python/ directory."""
+
+    def __init__(self, shared_path: str):
+        self._shared_path = shared_path
+
+    def try_bundle(self, output_dir: str, *, image=None, **kwargs) -> bool:
+        import shutil
+        import platform
+
+        source = os.path.join(os.path.dirname(__file__), "..", self._shared_path)
+        source = os.path.abspath(source)
+
+        # Lambda layers expect code under python/
+        python_dir = os.path.join(output_dir, "python")
+        os.makedirs(python_dir, exist_ok=True)
+
+        # Install shared requirements into python/
+        req_file = os.path.join(source, "requirements.txt")
+        if os.path.exists(req_file):
+            cmd = [
+                "pip", "install",
+                "--target", python_dir,
+                "--upgrade",
+                "-r", req_file,
+            ]
+            if platform.system() != "Linux":
+                cmd[2:2] = ["--platform", "manylinux2014_x86_64", "--only-binary=:all:"]
+            subprocess.check_call(cmd)
+
+        # Copy shared Python modules (exclude tests)
+        for item in os.listdir(source):
+            if item.endswith(".py") and not item.startswith("test_"):
+                shutil.copy2(os.path.join(source, item), os.path.join(python_dir, item))
+
         return True
 
 
@@ -93,8 +134,14 @@ class PublicCommentAnalyzerStack(Stack):
         # Create DynamoDB table
         self.jobs_table = self._create_jobs_table()
         
+        # Create access password secret
+        self.access_password_secret = self._create_access_password_secret()
+        
         # Create IAM roles
         self.lambda_role = self._create_lambda_role()
+        
+        # Create shared Lambda Layer
+        self.shared_layer = self._create_shared_layer()
         
         # Create Lambda functions
         self.upload_handler = self._create_upload_handler()
@@ -173,6 +220,26 @@ class PublicCommentAnalyzerStack(Stack):
         
         return table
 
+    def _create_access_password_secret(self) -> secretsmanager.Secret:
+        """Create Secrets Manager secret for site access password."""
+        import hashlib
+        
+        # Initial password — change via AWS Console or CLI after first deploy
+        initial_password = "0x8BKMVy8C7F"
+        password_hash = hashlib.sha256(initial_password.encode('utf-8')).hexdigest()
+        
+        secret = secretsmanager.Secret(
+            self,
+            "AccessPasswordSecret",
+            secret_name=f"PublicCommentAnalyzer-AccessPassword-{self.env_name}",
+            description="Access password hash for Public Comment Analyzer site protection",
+            secret_string_value=cdk.SecretValue.unsafe_plain_text(
+                json.dumps({"password_hash": password_hash})
+            ),
+        )
+        
+        return secret
+
     def _create_lambda_role(self) -> iam.Role:
         """Create IAM role for Lambda functions with necessary permissions."""
         role = iam.Role(
@@ -237,7 +304,35 @@ class PublicCommentAnalyzerStack(Stack):
             )
         )
         
+        # Secrets Manager access for access password
+        self.access_password_secret.grant_read(role)
+        
         return role
+
+    def _create_shared_layer(self) -> lambda_.LayerVersion:
+        """Create Lambda Layer with shared modules (auth, file_parser, file_writer, dynamodb_client)."""
+        layer = lambda_.LayerVersion(
+            self,
+            "SharedLayer",
+            layer_version_name=f"PublicCommentAnalyzer-Shared-{self.env_name}",
+            description="Shared modules for Public Comment Analyzer Lambda functions",
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_11],
+            code=lambda_.Code.from_asset(
+                "../backend/shared",
+                bundling=BundlingOptions(
+                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    command=[
+                        "bash", "-c",
+                        "mkdir -p /asset-output/python && "
+                        "pip install -r requirements.txt -t /asset-output/python && "
+                        "cp *.py /asset-output/python/ 2>/dev/null; "
+                        "rm -f /asset-output/python/test_*.py"
+                    ],
+                    local=_LayerBundling("../backend/shared"),
+                ),
+            ),
+        )
+        return layer
 
     def _create_upload_handler(self) -> lambda_.Function:
         """Create Lambda function for file upload handling."""
@@ -258,6 +353,7 @@ class PublicCommentAnalyzerStack(Stack):
                     local=_PipBundling("../backend/upload_handler"),
                 ),
             ),
+            layers=[self.shared_layer],
             role=self.lambda_role,
             timeout=Duration.seconds(30),
             memory_size=512,
@@ -265,7 +361,8 @@ class PublicCommentAnalyzerStack(Stack):
                 "DATA_BUCKET": self.data_bucket.bucket_name,
                 "JOBS_TABLE": self.jobs_table.table_name,
                 "ENVIRONMENT": self.env_name,
-                "ALLOWED_ORIGIN": self.allowed_origin
+                "ALLOWED_ORIGIN": self.allowed_origin,
+                "ACCESS_PASSWORD_SECRET_NAME": self.access_password_secret.secret_name
             }
         )
         
@@ -290,6 +387,7 @@ class PublicCommentAnalyzerStack(Stack):
                     local=_PipBundling("../backend/row_processor"),
                 ),
             ),
+            layers=[self.shared_layer],
             role=self.lambda_role,
             timeout=Duration.minutes(15),
             memory_size=1024,
@@ -300,7 +398,8 @@ class PublicCommentAnalyzerStack(Stack):
                 "ENVIRONMENT": self.env_name,
                 "IAM_POLICY_VERSION": "3",
                 "AGGREGATE_ANALYZER_FUNCTION": f"PublicCommentAnalyzer-AggregateAnalyzer-{self.env_name}",
-                "ALLOWED_ORIGIN": self.allowed_origin
+                "ALLOWED_ORIGIN": self.allowed_origin,
+                "ACCESS_PASSWORD_SECRET_NAME": self.access_password_secret.secret_name
             }
         )
         
@@ -325,6 +424,7 @@ class PublicCommentAnalyzerStack(Stack):
                     local=_PipBundling("../backend/aggregate_analyzer"),
                 ),
             ),
+            layers=[self.shared_layer],
             role=self.lambda_role,
             timeout=Duration.minutes(15),
             memory_size=512,
@@ -332,7 +432,8 @@ class PublicCommentAnalyzerStack(Stack):
                 "DATA_BUCKET": self.data_bucket.bucket_name,
                 "JOBS_TABLE": self.jobs_table.table_name,
                 "ENVIRONMENT": self.env_name,
-                "ALLOWED_ORIGIN": self.allowed_origin
+                "ALLOWED_ORIGIN": self.allowed_origin,
+                "ACCESS_PASSWORD_SECRET_NAME": self.access_password_secret.secret_name
             }
         )
         
@@ -357,6 +458,7 @@ class PublicCommentAnalyzerStack(Stack):
                     local=_PipBundling("../backend/dashboard_generator"),
                 ),
             ),
+            layers=[self.shared_layer],
             role=self.lambda_role,
             timeout=Duration.minutes(15),
             memory_size=512,
@@ -364,7 +466,8 @@ class PublicCommentAnalyzerStack(Stack):
                 "DATA_BUCKET": self.data_bucket.bucket_name,
                 "JOBS_TABLE": self.jobs_table.table_name,
                 "ENVIRONMENT": self.env_name,
-                "ALLOWED_ORIGIN": self.allowed_origin
+                "ALLOWED_ORIGIN": self.allowed_origin,
+                "ACCESS_PASSWORD_SECRET_NAME": self.access_password_secret.secret_name
             }
         )
         
@@ -388,7 +491,7 @@ class PublicCommentAnalyzerStack(Stack):
             default_cors_preflight_options=apigateway.CorsOptions(
                 allow_origins=[self.allowed_origin] if self.allowed_origin else apigateway.Cors.ALL_ORIGINS,
                 allow_methods=["GET", "POST", "OPTIONS"],
-                allow_headers=["Content-Type", "Authorization", "X-Requested-With"]
+                allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Access-Key"]
             ),
             binary_media_types=["multipart/form-data"]
         )
@@ -488,92 +591,20 @@ class PublicCommentAnalyzerStack(Stack):
         status_resource = api_resource.add_resource("status")
         status_job_resource = status_resource.add_resource("{jobId}")
         
-        # Create inline Lambda for status checking
+        # Create Lambda for status checking
         status_handler = lambda_.Function(
             self,
             "StatusHandler",
             function_name=f"PublicCommentAnalyzer-StatusHandler-{self.env_name}",
             runtime=lambda_.Runtime.PYTHON_3_11,
-            handler="index.lambda_handler",
-            code=lambda_.Code.from_inline("""
-import json
-import re
-import boto3
-import os
-from decimal import Decimal
-
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(os.environ['JOBS_TABLE'])
-CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
-
-# UUID v4 pattern for jobId validation
-UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.IGNORECASE)
-
-def decimal_default(obj):
-    if isinstance(obj, Decimal):
-        return int(obj) if obj % 1 == 0 else float(obj)
-    raise TypeError
-
-def lambda_handler(event, context):
-    job_id = event['pathParameters']['jobId']
-    
-    # Validate jobId format to prevent injection
-    if not UUID_PATTERN.match(job_id):
-        return {
-            'statusCode': 400,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': CORS_ORIGIN
-            },
-            'body': json.dumps({'error': {'code': 'INVALID_JOB_ID', 'message': 'jobId must be a valid UUID'}})
-        }
-    
-    try:
-        response = table.get_item(Key={'jobId': job_id})
-        
-        if 'Item' not in response:
-            return {
-                'statusCode': 404,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': CORS_ORIGIN
-                },
-                'body': json.dumps({'error': {'code': 'JOB_NOT_FOUND', 'message': 'Job not found'}})
-            }
-        
-        item = response['Item']
-        
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': CORS_ORIGIN
-            },
-            'body': json.dumps({
-                'jobId': item.get('jobId'),
-                'status': item.get('status'),
-                'progress': round((item.get('completedRows', 0) / item.get('totalRows', 1)) * 100, 2) if item.get('totalRows') else 0,
-                'completedRows': item.get('completedRows', 0),
-                'totalRows': item.get('totalRows', 0),
-                'errors': item.get('errors', [])
-            }, default=decimal_default)
-        }
-    except Exception as e:
-        print(f"Status handler error: {str(e)}")
-        return {
-            'statusCode': 500,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': CORS_ORIGIN
-            },
-            'body': json.dumps({'error': {'code': 'INTERNAL_ERROR', 'message': 'An internal error occurred'}})
-        }
-            """),
+            handler="handler.lambda_handler",
+            code=lambda_.Code.from_asset("../backend/status_handler"),
             role=self.lambda_role,
             timeout=Duration.seconds(10),
             environment={
                 "JOBS_TABLE": self.jobs_table.table_name,
-                "ALLOWED_ORIGIN": self.allowed_origin
+                "ALLOWED_ORIGIN": self.allowed_origin,
+                "ACCESS_PASSWORD_SECRET_NAME": self.access_password_secret.secret_name
             }
         )
         
@@ -639,7 +670,213 @@ def lambda_handler(event, context):
             ]
         )
         
+        # POST /api/auth/validate - validate access password
+        auth_resource = api_resource.add_resource("auth")
+        auth_validate_resource = auth_resource.add_resource("validate")
+        
+        auth_handler = lambda_.Function(
+            self,
+            "AuthHandler",
+            function_name=f"PublicCommentAnalyzer-AuthHandler-{self.env_name}",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="handler.lambda_handler",
+            code=lambda_.Code.from_asset("../backend/auth_handler"),
+            role=self.lambda_role,
+            timeout=Duration.seconds(10),
+            environment={
+                "ALLOWED_ORIGIN": self.allowed_origin,
+                "ACCESS_PASSWORD_SECRET_NAME": self.access_password_secret.secret_name
+            }
+        )
+        
+        auth_validate_resource.add_method(
+            "POST",
+            apigateway.LambdaIntegration(auth_handler, proxy=True),
+            method_responses=[
+                apigateway.MethodResponse(
+                    status_code="200",
+                    response_parameters={
+                        "method.response.header.Access-Control-Allow-Origin": True
+                    }
+                ),
+                apigateway.MethodResponse(status_code="401"),
+                apigateway.MethodResponse(status_code="500")
+            ]
+        )
+        
         return api
+
+    def _get_status_handler_code(self) -> str:
+        """Return inline code for the status handler Lambda."""
+        return '''
+import json
+import re
+import hashlib
+import boto3
+import os
+from decimal import Decimal
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table(os.environ['JOBS_TABLE'])
+CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
+SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
+
+UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', re.IGNORECASE)
+
+_secrets_client = None
+_cached_hash = None
+
+def _get_secrets_client():
+    global _secrets_client
+    if _secrets_client is None:
+        _secrets_client = boto3.client('secretsmanager')
+    return _secrets_client
+
+def _get_password_hash():
+    global _cached_hash
+    if _cached_hash is not None:
+        return _cached_hash
+    if not SECRET_NAME:
+        return ''
+    try:
+        resp = _get_secrets_client().get_secret_value(SecretId=SECRET_NAME)
+        secret = json.loads(resp['SecretString'])
+        _cached_hash = secret.get('password_hash', '')
+        return _cached_hash
+    except Exception as e:
+        print(f"ERROR retrieving secret: {e}")
+        return ''
+
+def _check_auth(event):
+    if not SECRET_NAME:
+        return True
+    headers = event.get('headers', {}) or {}
+    access_key = headers.get('x-access-key') or headers.get('X-Access-Key') or ''
+    if not access_key:
+        return False
+    stored_hash = _get_password_hash()
+    if not stored_hash:
+        return False
+    return hashlib.sha256(access_key.encode('utf-8')).hexdigest() == stored_hash
+
+def decimal_default(obj):
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    raise TypeError
+
+def lambda_handler(event, context):
+    if not _check_auth(event):
+        return {
+            'statusCode': 401,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
+            'body': json.dumps({'error': {'code': 'UNAUTHORIZED', 'message': 'Invalid or missing access key'}})
+        }
+
+    job_id = event['pathParameters']['jobId']
+
+    if not UUID_PATTERN.match(job_id):
+        return {
+            'statusCode': 400,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
+            'body': json.dumps({'error': {'code': 'INVALID_JOB_ID', 'message': 'jobId must be a valid UUID'}})
+        }
+
+    try:
+        response = table.get_item(Key={'jobId': job_id})
+        if 'Item' not in response:
+            return {
+                'statusCode': 404,
+                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
+                'body': json.dumps({'error': {'code': 'JOB_NOT_FOUND', 'message': 'Job not found'}})
+            }
+        item = response['Item']
+        return {
+            'statusCode': 200,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
+            'body': json.dumps({
+                'jobId': item.get('jobId'),
+                'status': item.get('status'),
+                'progress': round((item.get('completedRows', 0) / item.get('totalRows', 1)) * 100, 2) if item.get('totalRows') else 0,
+                'completedRows': item.get('completedRows', 0),
+                'totalRows': item.get('totalRows', 0),
+                'errors': item.get('errors', [])
+            }, default=decimal_default)
+        }
+    except Exception as e:
+        print(f"Status handler error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
+            'body': json.dumps({'error': {'code': 'INTERNAL_ERROR', 'message': 'An internal error occurred'}})
+        }
+'''
+
+    def _get_auth_handler_code(self) -> str:
+        """Return inline code for the auth validation Lambda."""
+        return '''
+import json
+import os
+import hashlib
+import boto3
+
+CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
+SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
+
+_secrets_client = None
+_cached_hash = None
+
+def _get_secrets_client():
+    global _secrets_client
+    if _secrets_client is None:
+        _secrets_client = boto3.client('secretsmanager')
+    return _secrets_client
+
+def _get_password_hash():
+    global _cached_hash
+    if _cached_hash is not None:
+        return _cached_hash
+    local_hash = os.environ.get('LOCAL_PASSWORD_HASH', '')
+    if local_hash:
+        _cached_hash = local_hash
+        return _cached_hash
+    if not SECRET_NAME:
+        # Fallback for local dev — hash of initial password '0x8BKMVy8C7F'
+        _cached_hash = '4cee30bed0a6fdf1d049bc889786ffb99b0f53fbeb76895648f5259df803ff69'
+        return _cached_hash
+    try:
+        resp = _get_secrets_client().get_secret_value(SecretId=SECRET_NAME)
+        secret = json.loads(resp['SecretString'])
+        _cached_hash = secret.get('password_hash', '')
+        return _cached_hash
+    except Exception as e:
+        print(f"ERROR retrieving secret: {e}")
+        # Fallback for local dev
+        _cached_hash = '4cee30bed0a6fdf1d049bc889786ffb99b0f53fbeb76895648f5259df803ff69'
+        return _cached_hash
+
+def lambda_handler(event, context):
+    headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': CORS_ORIGIN,
+        'Access-Control-Allow-Headers': 'Content-Type,X-Access-Key'
+    }
+    try:
+        body = json.loads(event.get('body', '{}') or '{}')
+        password = body.get('password', '')
+        if not password:
+            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Password is required'})}
+        input_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        stored_hash = _get_password_hash()
+        if not stored_hash:
+            return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Auth not configured'})}
+        if input_hash == stored_hash:
+            return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'valid': True})}
+        else:
+            return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Invalid password'})}
+    except Exception as e:
+        print(f"Auth error: {e}")
+        return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Internal error'})}
+'''
 
     def _create_cloudfront_distribution(self) -> cloudfront.Distribution:
         """Create CloudFront distribution for frontend and API."""
