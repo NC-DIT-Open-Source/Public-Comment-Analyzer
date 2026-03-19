@@ -10,24 +10,13 @@ import boto3
 from botocore.exceptions import ClientError
 from botocore.config import Config
 
-# Import shared modules
+# Shared modules are provided via Lambda Layer (/opt/python/) at runtime.
+# For local testing, fall back to the sibling shared/ directory.
 import sys
-sys.path.append('/opt/python')  # Lambda layer path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 
-try:
-    from file_parser import FileParser, ParsedFile
-except ImportError:
-    # Fallback for local testing
-    import importlib.util
-    shared_path = os.path.join(os.path.dirname(__file__), '..', 'shared')
-    
-    spec = importlib.util.spec_from_file_location("file_parser", 
-                                                   os.path.join(shared_path, "file_parser.py"))
-    file_parser_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(file_parser_module)
-    FileParser = file_parser_module.FileParser
-    ParsedFile = file_parser_module.ParsedFile
+from auth import validate_access_key, build_unauthorized_response
+from file_parser import FileParser, ParsedFile
 
 
 # Environment variables
@@ -98,6 +87,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Extract jobId from path parameters
         job_id = event.get('pathParameters', {}).get('jobId')
         is_async = event.get('asyncAnalysis', False)
+
+        # Validate access key for API Gateway invocations (skip for async)
+        if not is_async and not validate_access_key(event):
+            return build_unauthorized_response(_cors_origin())
         
         if not job_id:
             return {

@@ -107,17 +107,6 @@ jobs:
       - name: Install AWS CDK
         run: npm install -g aws-cdk
 
-      - name: Copy shared modules to Lambda functions
-        run: |
-          for lambda_dir in backend/upload_handler backend/row_processor backend/aggregate_analyzer backend/dashboard_generator; do
-            if [ -f "$lambda_dir/copy_shared.sh" ]; then
-              echo "Copying shared modules to $lambda_dir"
-              cd "$lambda_dir"
-              bash copy_shared.sh
-              cd ../..
-            fi
-          done
-
       - name: Deploy CDK stack
         working-directory: infrastructure
         run: |
@@ -155,7 +144,7 @@ jobs:
     needs: [detect-changes, deploy-infrastructure]
     if: |
       always() && 
-      (needs.detect-changes.outputs.frontend == 'true' || needs.deploy-infrastructure.result == 'success') &&
+      needs.detect-changes.outputs.frontend == 'true' &&
       (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
     steps:
       - name: Checkout code
@@ -173,14 +162,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/public-comment-app/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        working-directory: frontend/public-comment-app
+        working-directory: frontend
         run: npm ci
 
       - name: Build frontend
-        working-directory: frontend/public-comment-app
+        working-directory: frontend
         run: npm run build:prod
 
       - name: Get stack outputs (if infrastructure wasn't deployed)
@@ -201,7 +190,7 @@ jobs:
           echo "cloudfront-dist=$CLOUDFRONT_DIST_ID" >> $GITHUB_OUTPUT
 
       - name: Deploy to S3
-        working-directory: frontend/public-comment-app
+        working-directory: frontend
         env:
           FRONTEND_BUCKET: ${{ needs.deploy-infrastructure.outputs.frontend-bucket || steps.get-outputs.outputs.frontend-bucket }}
         run: |
@@ -242,28 +231,24 @@ jobs:
       - name: Test upload_handler
         working-directory: backend/upload_handler
         run: |
-          bash copy_shared.sh
           pip install -r requirements.txt
           python -m pytest -v
 
       - name: Test row_processor
         working-directory: backend/row_processor
         run: |
-          bash copy_shared.sh
           pip install -r requirements.txt
           python -m pytest -v
 
       - name: Test aggregate_analyzer
         working-directory: backend/aggregate_analyzer
         run: |
-          bash copy_shared.sh
           pip install -r requirements.txt
           python -m pytest -v
 
       - name: Test dashboard_generator
         working-directory: backend/dashboard_generator
         run: |
-          bash copy_shared.sh
           pip install -r requirements.txt
           python -m pytest -v || true
 
@@ -281,14 +266,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: frontend/public-comment-app/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        working-directory: frontend/public-comment-app
+        working-directory: frontend
         run: npm ci
 
       - name: Run tests
-        working-directory: frontend/public-comment-app
+        working-directory: frontend
         run: npm test -- --watch=false --browsers=ChromeHeadless
 
   deployment-summary:

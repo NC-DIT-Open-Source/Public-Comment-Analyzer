@@ -1,0 +1,259 @@
+// Digital Commons Style Guide - Component Styles
+@use 'sass:color';
+@use 'variables' as *;
+
+// ============================================
+// Buttons
+// ============================================
+
+.btn-primary {
+  background-color: $color-primary;
+  color: $color-white;
+  border: none;
+  padding: $spacing-sm $spacing-lg;
+  font-weight: $font-weight-semibold;
+  border-radius: $border-radius;
+  transition: background-color $transition-normal;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: color.adjust($color-primary, $lightness: 10%);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.btn-secondary {
+  background-color: $color-secondary;
+  color: $color-primary;
+  border: none;
+  padding: $spacing-sm $spacing-lg;
+  font-weight: $font-weight-semibold;
+  border-radius: $border-radius;
+  transition: background-color $transition-normal;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: color.adjust($color-secondary-light, $lightness: -5%);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.btn-outline {
+  background-color: transparent;
+  color: $color-primary;
+  border: 2px solid $color-primary;
+  padding: $spacing-sm $spacing-lg;
+  font-weight: $font-weight-semibold;
+  border-radius: $border-radius;
+  transition: all $transition-normal;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: $color-primary;
+    color: $color-white;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+// ============================================
+// Cards
+// ============================================
+
+.card {
+  background-color: $color-white;
+  border-radius: $border-radius-lg;
+  box-shadow: $shadow-md;
+  padding: $spacing-xl;
+  margin-bottom: $spacing-lg;
+
+  &-header {
+    margin-bottom: $spacing-lg;
+    padding-bottom: $spacing-md;
+    border-bottom: 1px solid $color-gray;
+  }
+
+  &-title {
+    font-size: $font-size-h3;
+    font-weight: $font-weight-bold;
+    color: $color-primary;
+    margin: 0;
+  }
+
+  &-subtitle {
+    font-size: $font-size-body;
+    color: $color-gray-dark;
+    margin: $spacing-xs 0 0 0;
+  }
+
+  &-content {
+    margin-bottom: $spacing-lg;
+  }
+
+  &-actions {
+    display: flex;
+    gap: $spacing-md;
+    padding-top: $spacing-md;
+    border-top: 1px solid $color-gray;
+  }
+}
+
+// ============================================
+// Notifications/Alerts
+// ============================================
+
+.alert {
+  padding: $spacing-md $spacing-lg;
+  border-radius: $border-radius;
+  margin-bottom: $spacing-md;
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+
+  &-info {
+    background-color: color.adjust($color-info, $lightness: 45%);
+    color: $color-info;
+    border-left: 4px solid $color-info;
+  }
+
+  &-success {
+    background-color: color.adjust($color-success, $lightness: 60%);
+    color: color.adjust($color-success, $lightness: -10%);
+    border-left: 4px solid $color-success;
+  }
+
+  &-warning {
+    background-color: color.adjust($color-warning, $lightness: 50%);
+    color: color.adjust($color-warning, $lightness: -10%);
+    border-left: 4px solid $color-warning;
+  }
+
+  &-error {
+    background-color: color.adjust($color-error, $lightness: 50%);
+    color: color.adjust($color-error, $lightness: -5%);
+    border-left: 4px solid $color-error;
+  }
+}
+
+// ============================================
+// Form Elements
+// ============================================
+
+.form-field {
+  margin-bottom: $spacing-lg;
+
+  label {
+    display: block;
+    font-weight: $font-weight-semibold;
+    margin-bottom: $spacing-xs;
+    color: $color-primary;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  textarea,
+  select {
+    width: 100%;
+    padding: $spacing-sm $spacing-md;
+    border: 1px solid $color-gray;
+    border-radius: $border-radius;
+    font-family: $font-family-primary;
+    font-size: $font-size-body;
+    transition: border-color $transition-fast;
+
+    &:focus {
+      outline: none;
+      border-color: $color-secondary;
+      box-shadow: 0 0 0 3px rgba($color-secondary, 0.1);
+    }
+
+    &:disabled {
+      background-color: $color-gray-light;
+      cursor: not-allowed;
+    }
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .error-message {
+    color: $color-error;
+    font-size: 0.875rem;
+    margin-top: $spacing-xs;
+  }
+}
+
+// ============================================
+// Icons
+// ============================================
+
+.icon {
+  width: 75px;
+  height: 75px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &-primary {
+    background-color: $color-primary;
+    color: $color-white;
+    border-radius: $border-radius;
+  }
+
+  &-secondary {
+    background-color: $color-secondary-light;
+    color: $color-primary;
+    border-radius: $border-radius;
+  }
+
+  &-sm {
+    width: 24px;
+    height: 24px;
+  }
+
+  &-md {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+// ============================================
+// Loading States
+// ============================================
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xxl;
+  gap: $spacing-md;
+
+  .spinner {
+    border: 4px solid $color-secondary-light;
+    border-top: 4px solid $color-secondary;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

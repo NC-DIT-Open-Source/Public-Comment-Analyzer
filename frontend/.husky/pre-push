@@ -1,0 +1,45 @@
+#!/usr/bin/env sh
+
+echo "🧪 Running pre-push tests..."
+echo ""
+
+# --- Backend tests ---
+# Activate venv if present
+if [ -d ".venv" ]; then
+    . .venv/bin/activate
+elif [ -d "venv" ]; then
+    . venv/bin/activate
+fi
+
+FAILED=0
+
+for lambda_dir in shared upload_handler row_processor aggregate_analyzer; do
+    dir="backend/$lambda_dir"
+    if ls "$dir"/test_*.py 1>/dev/null 2>&1; then
+        echo "▶ Testing backend/$lambda_dir..."
+        if ! (cd "$dir" && python -m pytest test_*.py -q --tb=short); then
+            FAILED=1
+        fi
+        echo ""
+    fi
+done
+
+# --- Frontend tests ---
+FE_DIR="frontend"
+if [ -d "$FE_DIR/node_modules" ]; then
+    echo "▶ Testing frontend..."
+    if ! (cd "$FE_DIR" && npx ng test --watch=false --browsers=ChromeHeadless); then
+        FAILED=1
+    fi
+    echo ""
+else
+    echo "⚠ Skipping frontend tests (run npm install in frontend first)"
+    echo ""
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+    echo "❌ Tests failed. Push aborted."
+    exit 1
+fi
+
+echo "✅ All tests passed. Pushing..."
