@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -80,7 +81,7 @@ class TestAggregateAnalyzerIntegration(unittest.TestCase):
         # Mock S3
         mock_s3_client = Mock()
         mock_s3_client.download_file.side_effect = lambda bucket, key, path: \
-            os.system(f'cp {temp_file_path} {path}')
+            shutil.copy2(temp_file_path, path)
         mock_s3_client.generate_presigned_url.return_value = 'https://s3.amazonaws.com/presigned-url'
         mock_get_s3.return_value = mock_s3_client
         

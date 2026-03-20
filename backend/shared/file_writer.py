@@ -3,6 +3,10 @@
 import csv
 from typing import List, Dict
 from openpyxl import Workbook
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class FileWriter:
@@ -52,16 +56,16 @@ class FileWriter:
                     try:
                         writer.writerow(row)
                     except Exception as e:
-                        print(f"Warning: Error writing CSV row {row_num}: {str(e)}")
+                        logger.warning(f"Error writing CSV row {row_num}: {str(e)}")
                         # Continue with other rows
                         continue
         
         except IOError as e:
-            print(f"ERROR: Failed to write CSV file: {str(e)}")
+            logger.error(f"Failed to write CSV file: {str(e)}")
             raise IOError(f"Cannot write output file: {str(e)}") from e
         
         except Exception as e:
-            print(f"ERROR: Unexpected error writing CSV: {str(e)}")
+            logger.error(f"Unexpected error writing CSV: {str(e)}")
             raise
     
     def _write_xlsx(self, headers: List[str], rows: List[Dict[str, str]], 
@@ -94,7 +98,7 @@ class FileWriter:
                     row_values = [row.get(header, '') for header in headers]
                     worksheet.append(row_values)
                 except Exception as e:
-                    print(f"Warning: Error writing XLSX row {row_num}: {str(e)}")
+                    logger.warning(f"Error writing XLSX row {row_num}: {str(e)}")
                     # Continue with other rows
                     continue
             
@@ -102,9 +106,9 @@ class FileWriter:
             workbook.save(output_path)
         
         except IOError as e:
-            print(f"ERROR: Failed to write XLSX file: {str(e)}")
+            logger.error(f"Failed to write XLSX file: {str(e)}")
             raise IOError(f"Cannot write output file: {str(e)}") from e
         
         except Exception as e:
-            print(f"ERROR: Unexpected error writing XLSX: {str(e)}")
+            logger.error(f"Unexpected error writing XLSX: {str(e)}")
             raise

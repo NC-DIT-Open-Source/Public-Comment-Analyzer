@@ -17,6 +17,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 
 from auth import validate_access_key, build_unauthorized_response
 from file_parser import FileParser, ParsedFile
+import logging
+import time
+import traceback
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 # Environment variables
@@ -32,7 +38,11 @@ MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
 
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment, falling back to '*'."""
-    return os.environ.get('ALLOWED_ORIGIN') or '*'
+    origin = os.environ.get('ALLOWED_ORIGIN')
+    if not origin:
+        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
+        return '*'
+    return origin
 
 
 # AWS clients (initialized lazily)
@@ -176,7 +186,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         # Async invocation — generate the analysis now
-        print(f"Generating aggregate analysis for job {job_id}")
+        logger.info(f"Generating aggregate analysis for job {job_id}")
         
         # Read processed file from S3
         output_key = job_record['outputFileKey']
@@ -205,7 +215,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Store analysis in DynamoDB
         _update_job_with_analysis(job_id, aggregate_analysis)
         
-        print(f"Aggregate analysis completed and cached for job {job_id}")
+        logger.info(f"Aggregate analysis completed and cached for job {job_id}")
         
         # Generate presigned URL for download
         download_url = _generate_presigned_url(output_key)
@@ -226,10 +236,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         error_code = e.response['Error']['Code']
         error_message = e.response['Error']['Message']
         
-        print(f"ERROR: AWS service error in aggregate analyzer")
-        print(f"  Error code: {error_code}")
-        print(f"  Error message: {error_message}")
-        print(f"  Job ID: {event.get('pathParameters', {}).get('jobId')}")
+        logger.error("AWS service error in aggregate analyzer")
+        logger.error(f"Error code: {error_code}")
+        logger.error(f"Error message: {error_message}")
+        logger.error(f"Job ID: {event.get('pathParameters', {}).get('jobId')}")
         
         # Provide user-friendly error messages
         if error_code == 'NoSuchKey':
@@ -257,14 +267,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         error_type = type(e).__name__
         error_message = str(e)
         
-        print(f"ERROR: Aggregate analysis failed")
-        print(f"  Error type: {error_type}")
-        print(f"  Error message: {error_message}")
-        print(f"  Job ID: {event.get('pathParameters', {}).get('jobId')}")
-        
-        import traceback
-        print(f"  Stack trace:")
-        traceback.print_exc()
+        logger.error("Aggregate analysis failed")
+        logger.error(f"Error type: {error_type}")
+        logger.error(f"Error message: {error_message}")
+        logger.error(f"Job ID: {event.get('pathParameters', {}).get('jobId')}")
+        logger.error("Stack trace:", exc_info=True)
         
         # Provide user-friendly error message
         if 'bedrock' in error_message.lower():
@@ -374,7 +381,7 @@ def _format_data_for_analysis(parsed_file: ParsedFile,
             categorized_text.append(f"  - (unmatched/blank): {unmatched} ({(unmatched / total_rows) * 100:.1f}%)")
     
     # --- Open text columns: map-reduce summarization ---
-    print(f"Starting map-reduce summarization for {len(open_text_cols)} open text column(s)")
+    logger.info(f"Starting map-reduce summarization for {len(open_text_cols)} open text column(s)")
     open_text_summaries = []
     for col_name, instructions in open_text_cols.items():
         values = [row.get(col_name, '') for row in parsed_file.rows if row.get(col_name, '').strip()]
@@ -494,12 +501,11 @@ def _call_bedrock_sonnet(prompt: str) -> str:
         
         except Exception as e:
             if attempt < max_retries - 1:
-                import time
                 time.sleep(2 ** attempt)
-                print(f"Sonnet call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                logger.warning(f"Sonnet call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 continue
             else:
-                print(f"Sonnet call failed after {max_retries} attempts: {str(e)}")
+                logger.error(f"Sonnet call failed after {max_retries} attempts: {str(e)}")
                 raise e
 
 
@@ -532,7 +538,7 @@ def _summarize_open_text_chunks(col_name: str, values: List[str],
     for i in range(0, len(values), CHUNK_SIZE):
         chunks.append(values[i:i + CHUNK_SIZE])
     
-    print(f"  Map step: {len(values)} values in {len(chunks)} chunks for '{col_name}'")
+    logger.info(f"Map step: {len(values)} values in {len(chunks)} chunks for '{col_name}'")
     
     def summarize_chunk(chunk_index: int, chunk: List[str]) -> str:
         numbered = "\n".join(f"{i+1}. {v}" for i, v in enumerate(chunk))
@@ -565,10 +571,10 @@ Be concise but thorough. Focus on substance, not style."""
             try:
                 chunk_summaries[idx] = future.result()
             except Exception as e:
-                print(f"  WARNING: Chunk {idx} summarization failed: {e}")
+                logger.warning(f"Chunk {idx} summarization failed: {e}")
                 chunk_summaries[idx] = f"Chunk {idx + 1}: (summarization failed)"
     
-    print(f"  Map step complete for '{col_name}': {sum(1 for s in chunk_summaries if s and 'failed' not in s)}/{len(chunks)} chunks succeeded")
+    logger.info(f"Map step complete for '{col_name}': {sum(1 for s in chunk_summaries if s and 'failed' not in s)}/{len(chunks)} chunks succeeded")
     
     return f"{col_name} — {len(values)} total responses, summarized in {len(chunks)} chunks:\n\n" + \
            "\n\n".join(s for s in chunk_summaries if s)
@@ -616,13 +622,12 @@ def _call_bedrock_opus(prompt: str) -> str:
         except Exception as e:
             if attempt < max_retries - 1:
                 # Exponential backoff: 1s, 2s, 4s
-                import time
                 time.sleep(2 ** attempt)
-                print(f"Bedrock call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                logger.warning(f"Bedrock call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 continue
             else:
                 # Final attempt failed
-                print(f"Bedrock call failed after {max_retries} attempts: {str(e)}")
+                logger.error(f"Bedrock call failed after {max_retries} attempts: {str(e)}")
                 raise e
 
 

@@ -4,8 +4,14 @@ import json
 import os
 import hashlib
 import boto3
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
+if CORS_ORIGIN == '*':
+    logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
 SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
 
 _secrets_client = None
@@ -29,19 +35,15 @@ def _get_password_hash():
         _cached_hash = local_hash
         return _cached_hash
     if not SECRET_NAME:
-        # Fallback for local dev — hash of initial password 'REDACTED_INITIAL_PASSWORD'
-        _cached_hash = 'REDACTED_HASH'
-        return _cached_hash
+        return ''
     try:
         resp = _get_secrets_client().get_secret_value(SecretId=SECRET_NAME)
         secret = json.loads(resp['SecretString'])
         _cached_hash = secret.get('password_hash', '')
         return _cached_hash
     except Exception as e:
-        print(f"ERROR retrieving secret: {e}")
-        # Fallback for local dev
-        _cached_hash = 'REDACTED_HASH'
-        return _cached_hash
+        logger.error(f"Error retrieving secret: {e}")
+        return ''
 
 
 def lambda_handler(event, context):
@@ -64,5 +66,5 @@ def lambda_handler(event, context):
         else:
             return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Invalid password'})}
     except Exception as e:
-        print(f"Auth error: {e}")
+        logger.error(f"Auth error: {e}")
         return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Internal error'})}
