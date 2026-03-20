@@ -6,8 +6,13 @@ import re
 import base64
 import uuid
 import tempfile
+import logging
+import traceback
 from typing import Dict, Any
 import boto3
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Shared modules are provided via Lambda Layer (/opt/python/) at runtime.
 # For local testing, fall back to the sibling shared/ directory.
@@ -31,7 +36,11 @@ XLSX_MAGIC_BYTES = b'PK\x03\x04'
 
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment, falling back to '*'."""
-    return os.environ.get('ALLOWED_ORIGIN') or '*'
+    origin = os.environ.get('ALLOWED_ORIGIN')
+    if not origin:
+        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
+        return '*'
+    return origin
 
 
 def get_data_bucket():
@@ -174,9 +183,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         Response with file metadata or error
     """
-    print("=== UPLOAD HANDLER START ===")
-    print(f"Event keys: {list(event.keys())}")
-    print(f"Request ID: {getattr(context, 'aws_request_id', 'N/A')}")
+    logger.info("=== UPLOAD HANDLER START ===")
+    logger.info(f"Event keys: {list(event.keys())}")
+    logger.info(f"Request ID: {getattr(context, 'aws_request_id', 'N/A')}")
 
     # Validate access key
     if not validate_access_key(event):
@@ -185,13 +194,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     try:
         # Extract content type and body
         headers = event.get('headers', {})
-        print(f"Headers: {headers}")
+        logger.debug(f"Headers: {headers}")
         
         content_type = headers.get('content-type') or headers.get('Content-Type', '')
-        print(f"Content-Type: {content_type}")
+        logger.info(f"Content-Type: {content_type}")
         
         if not content_type.startswith('multipart/form-data'):
-            print("ERROR: Invalid content type")
+            logger.error("Invalid content type")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -208,20 +217,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         body = event.get('body', '')
         is_base64 = event.get('isBase64Encoded', False)
-        print(f"Body length: {len(body)}, Is Base64: {is_base64}")
+        logger.info(f"Body length: {len(body)}, Is Base64: {is_base64}")
         
         if not is_base64:
             # If not base64 encoded, encode it
             body = base64.b64encode(body.encode()).decode()
-            print("Encoded body to base64")
+            logger.debug("Encoded body to base64")
         
         # Parse multipart data
-        print("Parsing multipart data...")
+        logger.info("Parsing multipart data...")
         try:
             file_data = parse_multipart_form_data(body, content_type)
-            print(f"Parsed file: {file_data['filename']}, size: {len(file_data['file'])} bytes")
+            logger.info(f"Parsed file: {file_data['filename']}, size: {len(file_data['file'])} bytes")
         except Exception as e:
-            print(f"ERROR parsing multipart data: {str(e)}")
+            logger.error(f"Error parsing multipart data: {str(e)}")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -241,7 +250,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Enforce file size limit
         if len(file_content) > MAX_FILE_SIZE_BYTES:
-            print(f"ERROR: File too large: {len(file_content)} bytes")
+            logger.warning(f"File too large: {len(file_content)} bytes")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -258,10 +267,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Validate file format by extension
         extension = get_file_extension(filename)
-        print(f"File extension: {extension}")
+        logger.info(f"File extension: {extension}")
         
         if not validate_file_format(extension):
-            print(f"ERROR: Invalid file format: {extension}")
+            logger.warning(f"Invalid file format: {extension}")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -278,7 +287,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Validate file content matches claimed type (magic byte check)
         if not validate_file_content(file_content, extension):
-            print(f"ERROR: File content does not match extension: {extension}")
+            logger.warning(f"File content does not match extension: {extension}")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -295,25 +304,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Generate unique file ID
         file_id = str(uuid.uuid4())
-        print(f"Generated file ID: {file_id}")
+        logger.info(f"Generated file ID: {file_id}")
         
         # Save file to temporary location for parsing
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{extension}') as tmp_file:
             tmp_file.write(file_content)
             tmp_file_path = tmp_file.name
         
-        print(f"Saved to temp file: {tmp_file_path}")
+        logger.debug(f"Saved to temp file: {tmp_file_path}")
         
         try:
             # Parse file to extract headers and row count
-            print("Parsing file...")
+            logger.info("Parsing file...")
             parser = FileParser()
             parsed_file = parser.parse(tmp_file_path, extension)
-            print(f"Parsed: {len(parsed_file.headers)} columns, {parsed_file.row_count} rows")
+            logger.info(f"Parsed: {len(parsed_file.headers)} columns, {parsed_file.row_count} rows")
             
             # Enforce row count limit
             if parsed_file.row_count > MAX_ROW_COUNT:
-                print(f"ERROR: Too many rows: {parsed_file.row_count}")
+                logger.warning(f"Too many rows: {parsed_file.row_count}")
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -331,7 +340,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Store file in S3
             s3_key = f'uploads/{file_id}/input.{extension}'
             bucket = get_data_bucket()
-            print(f"Uploading to S3: {bucket}/{s3_key}")
+            logger.info(f"Uploading to S3: {bucket}/{s3_key}")
             
             s3_client.put_object(
                 Bucket=bucket,
@@ -342,7 +351,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'file-id': file_id
                 }
             )
-            print("S3 upload complete")
+            logger.info("S3 upload complete")
             
             # Return file metadata
             response_body = {
@@ -354,7 +363,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'version': '1.1.0',
                 'deployedVia': 'GitHub Actions CI/CD'
             }
-            print(f"Returning success response: {response_body}")
+            logger.info(f"Returning success response: {response_body}")
             
             return {
                 'statusCode': 200,
@@ -369,20 +378,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Clean up temporary file
             if os.path.exists(tmp_file_path):
                 os.remove(tmp_file_path)
-                print(f"Cleaned up temp file")
+                logger.debug("Cleaned up temp file")
     
     except Exception as e:
         # Log detailed error information
         error_type = type(e).__name__
         error_message = str(e)
         
-        print(f"ERROR: Upload processing failed")
-        print(f"  Error type: {error_type}")
-        print(f"  Error message: {error_message}")
-        
-        import traceback
-        print(f"  Stack trace:")
-        traceback.print_exc()
+        logger.error("Upload processing failed")
+        logger.error(f"Error type: {error_type}")
+        logger.error(f"Error message: {error_message}")
+        logger.error("Stack trace:", exc_info=True)
         
         # Provide user-friendly error message based on error type
         if 'encoding' in error_message.lower() or 'decode' in error_message.lower():

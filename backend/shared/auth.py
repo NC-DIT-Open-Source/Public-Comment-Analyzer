@@ -5,6 +5,10 @@ import json
 import hashlib
 import boto3
 from botocore.exceptions import ClientError
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 _secrets_client = None
 _cached_password_hash = None
@@ -33,7 +37,7 @@ def _get_password_hash() -> str:
         _cached_password_hash = secret.get('password_hash', '')
         return _cached_password_hash
     except ClientError as e:
-        print(f"ERROR: Failed to retrieve access password secret: {e}")
+        logger.error(f"Failed to retrieve access password secret: {e}")
         return ''
 
 

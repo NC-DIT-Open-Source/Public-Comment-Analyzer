@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -72,7 +73,7 @@ class TestErrorHandling(unittest.TestCase):
         # Mock S3
         mock_s3_client = Mock()
         mock_s3_client.download_file.side_effect = lambda bucket, key, path: \
-            os.system(f'cp {input_file_path} {path}')
+            shutil.copy2(input_file_path, path)
         mock_s3_client.head_object.return_value = {}
         
         # Capture uploaded file
@@ -80,7 +81,7 @@ class TestErrorHandling(unittest.TestCase):
         def capture_upload(path, bucket, key):
             nonlocal uploaded_file_path
             uploaded_file_path = tempfile.NamedTemporaryFile(delete=False, suffix='.csv').name
-            os.system(f'cp {path} {uploaded_file_path}')
+            shutil.copy2(path, uploaded_file_path)
         
         mock_s3_client.upload_file.side_effect = capture_upload
         mock_get_s3.return_value = mock_s3_client
