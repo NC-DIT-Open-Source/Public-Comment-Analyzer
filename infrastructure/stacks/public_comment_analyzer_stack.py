@@ -936,6 +936,7 @@ def lambda_handler(event, context):
                     origin=origins.RestApiOrigin(self.api),
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
                     cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL
                 )
             },
