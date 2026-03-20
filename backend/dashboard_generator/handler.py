@@ -17,6 +17,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from auth import validate_access_key, build_unauthorized_response
 from file_parser import FileParser, ParsedFile
 
+import logging
+import time
+import traceback
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 DATA_BUCKET = os.environ.get('DATA_BUCKET')
 JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
 CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
@@ -31,7 +38,11 @@ _bedrock_runtime = None
 
 
 def _cors_origin() -> str:
-    return os.environ.get('ALLOWED_ORIGIN') or '*'
+    origin = os.environ.get('ALLOWED_ORIGIN')
+    if not origin:
+        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
+        return '*'
+    return origin
 
 
 def _get_s3_client():
@@ -167,16 +178,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     except ClientError as e:
         error_code = e.response['Error']['Code']
-        print(f"ERROR: AWS error in dashboard_generator: {error_code} - {e.response['Error']['Message']}")
+        logger.error(f"AWS error in dashboard_generator: {error_code} - {e.response['Error']['Message']}")
         return {
             'statusCode': 500,
             'headers': _cors_headers(),
             'body': json.dumps({'error': {'code': 'AWS_ERROR', 'message': 'An AWS service error occurred.'}})
         }
     except Exception as e:
-        print(f"ERROR: Dashboard generation failed: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Dashboard generation failed: {type(e).__name__}: {str(e)}")
+        logger.error("Stack trace:", exc_info=True)
         return {
             'statusCode': 500,
             'headers': _cors_headers(),
@@ -318,9 +328,8 @@ def _call_bedrock_opus(prompt: str) -> str:
             return response_body['content'][0]['text']
         except Exception as e:
             if attempt < max_retries - 1:
-                import time
                 time.sleep(2 ** attempt)
-                print(f"Bedrock call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                logger.warning(f"Bedrock call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 continue
             raise
 
