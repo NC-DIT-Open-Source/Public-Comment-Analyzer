@@ -2,59 +2,28 @@
 
 import json
 import re
-import hashlib
-import boto3
 import os
+import logging
 from decimal import Decimal
+
+import boto3
+
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
+
+from auth import validate_access_key, build_unauthorized_response
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['JOBS_TABLE'])
 CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
-SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
 
 UUID_PATTERN = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
     re.IGNORECASE,
 )
-
-_secrets_client = None
-_cached_hash = None
-
-
-def _get_secrets_client():
-    global _secrets_client
-    if _secrets_client is None:
-        _secrets_client = boto3.client('secretsmanager')
-    return _secrets_client
-
-
-def _get_password_hash():
-    global _cached_hash
-    if _cached_hash is not None:
-        return _cached_hash
-    if not SECRET_NAME:
-        return ''
-    try:
-        resp = _get_secrets_client().get_secret_value(SecretId=SECRET_NAME)
-        secret = json.loads(resp['SecretString'])
-        _cached_hash = secret.get('password_hash', '')
-        return _cached_hash
-    except Exception as e:
-        print(f"ERROR retrieving secret: {e}")
-        return ''
-
-
-def _check_auth(event):
-    if not SECRET_NAME:
-        return True
-    headers = event.get('headers', {}) or {}
-    access_key = headers.get('x-access-key') or headers.get('X-Access-Key') or ''
-    if not access_key:
-        return False
-    stored_hash = _get_password_hash()
-    if not stored_hash:
-        return False
-    return hashlib.sha256(access_key.encode('utf-8')).hexdigest() == stored_hash
 
 
 def decimal_default(obj):
@@ -64,12 +33,8 @@ def decimal_default(obj):
 
 
 def lambda_handler(event, context):
-    if not _check_auth(event):
-        return {
-            'statusCode': 401,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
-            'body': json.dumps({'error': {'code': 'UNAUTHORIZED', 'message': 'Invalid or missing access key'}})
-        }
+    if not validate_access_key(event):
+        return build_unauthorized_response(CORS_ORIGIN)
 
     job_id = event['pathParameters']['jobId']
 
@@ -102,7 +67,7 @@ def lambda_handler(event, context):
             }, default=decimal_default)
         }
     except Exception as e:
-        print(f"Status handler error: {str(e)}")
+        logger.error(f"Status handler error: {str(e)}")
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},

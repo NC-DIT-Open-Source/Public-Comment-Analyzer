@@ -18,6 +18,15 @@ from auth import validate_access_key, build_unauthorized_response
 from file_parser import FileParser, ParsedFile
 from file_writer import FileWriter
 
+import logging
+import traceback
+import time
+import random
+import re
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 # Environment variables
 DATA_BUCKET = os.environ.get('DATA_BUCKET')
@@ -30,7 +39,11 @@ CLAUDE_HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment, falling back to '*'."""
-    return os.environ.get('ALLOWED_ORIGIN') or '*'
+    origin = os.environ.get('ALLOWED_ORIGIN')
+    if not origin:
+        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
+        return '*'
+    return origin
 
 
 # AWS clients (initialized lazily)
@@ -328,10 +341,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         error_code = e.response['Error']['Code']
         error_message = e.response['Error']['Message']
         
-        print(f"ERROR: AWS service error in row processor")
-        print(f"  Error code: {error_code}")
-        print(f"  Error message: {error_message}")
-        print(f"  File ID: {body.get('fileId')}")
+        logger.error("AWS service error in row processor")
+        logger.error(f"Error code: {error_code}")
+        logger.error(f"Error message: {error_message}")
+        logger.error(f"File ID: {body.get('fileId')}")
         
         # Provide user-friendly error messages
         if error_code == 'NoSuchKey':
@@ -359,14 +372,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         error_type = type(e).__name__
         error_message = str(e)
         
-        print(f"ERROR: Row processing failed")
-        print(f"  Error type: {error_type}")
-        print(f"  Error message: {error_message}")
-        print(f"  File ID: {body.get('fileId') if 'body' in locals() else 'unknown'}")
-        
-        import traceback
-        print(f"  Stack trace:")
-        traceback.print_exc()
+        logger.error("Row processing failed")
+        logger.error(f"Error type: {error_type}")
+        logger.error(f"Error message: {error_message}")
+        logger.error(f"File ID: {body.get('fileId') if 'body' in locals() else 'unknown'}")
+        logger.error("Stack trace:", exc_info=True)
         
         # Provide user-friendly error message
         if 'bedrock' in error_message.lower():
@@ -412,7 +422,7 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     output_key = event['outputKey']
     
     try:
-        print(f"Starting async processing for job {job_id}")
+        logger.info(f"Starting async processing for job {job_id}")
         
         # Update status to processing
         _update_job_status(job_id, 'processing', 0, 0)
@@ -426,7 +436,7 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         parser = FileParser()
         parsed_file = parser.parse(input_path, file_type)
         
-        print(f"Processing {parsed_file.row_count} rows")
+        logger.info(f"Processing {parsed_file.row_count} rows")
         
         # Process rows with Bedrock
         processed_rows = _process_rows(job_id, parsed_file, analysis_columns)
@@ -452,16 +462,14 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Trigger aggregate analysis asynchronously so results are pre-computed
         _trigger_aggregate_analysis(job_id)
         
-        print(f"Async processing completed for job {job_id}")
+        logger.info(f"Async processing completed for job {job_id}")
         
         return {'statusCode': 200, 'body': 'Processing completed'}
         
     except Exception as e:
         error_message = str(e)
-        print(f"ERROR: Async processing failed for job {job_id}: {error_message}")
-        
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Async processing failed for job {job_id}: {error_message}")
+        logger.error("Stack trace:", exc_info=True)
         
         # Update job status to failed
         _update_job_status(job_id, 'failed', 0, 0, [{
@@ -493,40 +501,6 @@ def _determine_file_type(file_id: str) -> str:
     
     raise ValueError(f"No input file found for file_id: {file_id}")
 
-
-def _create_job_record(job_id: str, file_id: str, parsed_file: ParsedFile,
-                      analysis_columns: List[Dict[str, str]], 
-                      input_key: str, output_key: str) -> None:
-    """
-    Create job record in DynamoDB.
-    
-    Args:
-        job_id: Job ID
-        file_id: File ID
-        parsed_file: Parsed file data
-        analysis_columns: Analysis column definitions
-        input_key: S3 key for input file
-        output_key: S3 key for output file
-    """
-    table = _get_dynamodb().Table(JOBS_TABLE_NAME)
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    table.put_item(
-        Item={
-            'jobId': job_id,
-            'fileId': file_id,
-            'status': 'processing',
-            'totalRows': parsed_file.row_count,
-            'completedRows': 0,
-            'analysisColumns': analysis_columns,
-            'inputFileKey': input_key,
-            'outputFileKey': output_key,
-            'createdAt': now,
-            'updatedAt': now,
-            'errors': []
-        }
-    )
 
 
 def _create_job_record_quick(job_id: str, file_id: str, row_count: int,
@@ -600,7 +574,7 @@ def _get_row_count(s3_key: str, file_type: str) -> int:
         
         return row_count
     except Exception as e:
-        print(f"Warning: Could not get exact row count: {e}")
+        logger.warning(f"Could not get exact row count: {e}")
         return 0  # Return 0 if we can't determine
 
 
@@ -651,7 +625,7 @@ def _trigger_aggregate_analysis(job_id: str) -> None:
     """
     function_name = os.environ.get('AGGREGATE_ANALYZER_FUNCTION')
     if not function_name:
-        print(f"AGGREGATE_ANALYZER_FUNCTION not set, skipping aggregate trigger for {job_id}")
+        logger.warning(f"AGGREGATE_ANALYZER_FUNCTION not set, skipping aggregate trigger for {job_id}")
         return
 
     try:
@@ -672,10 +646,10 @@ def _trigger_aggregate_analysis(job_id: str) -> None:
                 'pathParameters': {'jobId': job_id}
             })
         )
-        print(f"Triggered aggregate analysis for job {job_id}")
+        logger.info(f"Triggered aggregate analysis for job {job_id}")
     except Exception as e:
         # Non-fatal — the results endpoint will still generate on demand as fallback
-        print(f"WARNING: Failed to trigger aggregate analysis for {job_id}: {e}")
+        logger.warning(f"Failed to trigger aggregate analysis for {job_id}: {e}")
 
 
 
@@ -724,10 +698,10 @@ def _process_rows(job_id: str, parsed_file: ParsedFile,
                 error_msg = str(e)
                 
                 # Log detailed error information
-                print(f"ERROR: Row {row_number} failed processing")
-                print(f"  Error type: {type(e).__name__}")
-                print(f"  Error message: {error_msg}")
-                print(f"  Row data: {parsed_file.rows[row_index]}")
+                logger.error(f"Row {row_number} failed processing")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error message: {error_msg}")
+                logger.debug(f"Row data: {parsed_file.rows[row_index]}")
                 
                 # Create error record for DynamoDB
                 error_record = {
@@ -753,7 +727,7 @@ def _process_rows(job_id: str, parsed_file: ParsedFile,
     
     # Update final status with any errors
     if error_records:
-        print(f"Processing completed with {len(error_records)} errors out of {total_rows} rows")
+        logger.warning(f"Processing completed with {len(error_records)} errors out of {total_rows} rows")
         _update_job_status(job_id, 'completed', total_rows, total_rows, error_records)
     
     return processed_rows
@@ -874,20 +848,19 @@ Respond in JSON format with keys matching the column names exactly. Only include
                 analysis_data = json.loads(content)
             except json.JSONDecodeError:
                 # If that fails, try to extract JSON from markdown code blocks
-                import re
                 json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', content, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1).strip()
                     try:
                         analysis_data = json.loads(json_str)
                     except json.JSONDecodeError as e:
-                        print(f"Invalid JSON in markdown block (attempt {attempt + 1}/{max_retries})")
-                        print(f"  Response content: {content[:200]}...")
+                        logger.warning(f"Invalid JSON in markdown block (attempt {attempt + 1}/{max_retries})")
+                        logger.warning(f"Response content: {content[:200]}...")
                         raise ValueError(f"Invalid JSON response from AI model: {str(e)}")
                 else:
                     # Log the invalid JSON response
-                    print(f"Invalid JSON response from Bedrock (attempt {attempt + 1}/{max_retries})")
-                    print(f"  Response content: {content[:200]}...")
+                    logger.warning(f"Invalid JSON response from Bedrock (attempt {attempt + 1}/{max_retries})")
+                    logger.warning(f"Response content: {content[:200]}...")
                     raise ValueError(f"Invalid JSON response from AI model: No JSON found in response")
             
             # Ensure all expected columns are present and validate categorized columns
@@ -922,12 +895,10 @@ Respond in JSON format with keys matching the column names exactly. Only include
             error_message = e.response['Error']['Message']
             last_error = f"AWS Bedrock error ({error_code}): {error_message}"
             
-            print(f"Bedrock API error (attempt {attempt + 1}/{max_retries}): {error_code} - {error_message}")
-            
+            logger.warning(f"Bedrock API error (attempt {attempt + 1}/{max_retries}): {error_code} - {error_message}")
+
             if attempt < max_retries - 1:
                 # Exponential backoff with jitter: base * 2^attempt + random jitter
-                import time
-                import random
                 time.sleep(2 ** attempt + random.uniform(0, 1))
                 continue
             else:
@@ -937,12 +908,10 @@ Respond in JSON format with keys matching the column names exactly. Only include
         except Exception as e:
             last_error = str(e)
             
-            print(f"Error processing row (attempt {attempt + 1}/{max_retries}): {last_error}")
-            
+            logger.warning(f"Error processing row (attempt {attempt + 1}/{max_retries}): {last_error}")
+
             if attempt < max_retries - 1:
                 # Exponential backoff with jitter
-                import time
-                import random
                 time.sleep(2 ** attempt + random.uniform(0, 1))
                 continue
             else:
@@ -1043,8 +1012,7 @@ Respond with ONLY the chosen value, no JSON, no quotes, no explanation. Just the
                 if matched:
                     break
             except Exception as e:
-                print(f"Category retry {retry_attempt + 1} failed for {col_name}: {e}")
-                import time, random
+                logger.warning(f"Category retry {retry_attempt + 1} failed for {col_name}: {e}")
                 time.sleep(1 + random.uniform(0, 0.5))
         
         if matched:

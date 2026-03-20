@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 from handler import (
     lambda_handler,
     _determine_file_type,
-    _create_job_record,
     _update_job_status,
     _process_single_row
 )
