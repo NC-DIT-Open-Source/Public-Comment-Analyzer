@@ -5,6 +5,10 @@ from typing import List, Dict
 from dataclasses import dataclass
 import chardet
 from openpyxl import load_workbook
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 @dataclass
@@ -106,14 +110,14 @@ class FileParser:
                                        for key, value in row.items()}
                             rows.append(row_dict)
                         except Exception as e:
-                            print(f"Warning: Error parsing CSV row {row_num}: {str(e)}")
+                            logger.warning(f"Error parsing CSV row {row_num}: {str(e)}")
                             # Continue with other rows
                             continue
                 
                 if not rows:
-                    print("Warning: CSV file has no data rows")
+                    logger.warning("CSV file has no data rows")
                 
-                print(f"Successfully parsed CSV with encoding: {encoding}")
+                logger.info(f"Successfully parsed CSV with encoding: {encoding}")
                 return ParsedFile(
                     headers=headers,
                     rows=rows,
@@ -121,20 +125,20 @@ class FileParser:
                 )
             
             except UnicodeDecodeError as e:
-                print(f"Failed to decode CSV file with encoding {encoding}: {str(e)}")
+                logger.debug(f"Failed to decode CSV file with encoding {encoding}: {str(e)}")
                 last_error = e
                 continue  # Try next encoding
             
             except csv.Error as e:
-                print(f"ERROR: CSV parsing error with encoding {encoding}: {str(e)}")
+                logger.error(f"CSV parsing error with encoding {encoding}: {str(e)}")
                 raise ValueError(f"Invalid CSV format: {str(e)}") from e
             
             except Exception as e:
-                print(f"ERROR: Unexpected error parsing CSV with encoding {encoding}: {str(e)}")
+                logger.error(f"Unexpected error parsing CSV with encoding {encoding}: {str(e)}")
                 raise
         
         # If we get here, all encodings failed
-        print(f"ERROR: Failed to decode CSV file with any supported encoding")
+        logger.error("Failed to decode CSV file with any supported encoding")
         raise ValueError(f"File encoding not supported. Tried: {', '.join(encodings_to_try)}. Please ensure file is properly encoded.") from last_error
     
     def _parse_xlsx(self, file_path: str) -> ParsedFile:
@@ -185,14 +189,14 @@ class FileParser:
                         row_dict[header] = str(value) if value is not None else ''
                     rows.append(row_dict)
                 except Exception as e:
-                    print(f"Warning: Error parsing XLSX row {row_num}: {str(e)}")
+                    logger.warning(f"Error parsing XLSX row {row_num}: {str(e)}")
                     # Continue with other rows
                     continue
             
             workbook.close()
             
             if not rows:
-                print("Warning: XLSX file has no data rows")
+                logger.warning("XLSX file has no data rows")
             
             return ParsedFile(
                 headers=headers,
@@ -201,12 +205,12 @@ class FileParser:
             )
         
         except Exception as e:
-            print(f"ERROR: Failed to parse XLSX file: {str(e)}")
+            logger.error(f"Failed to parse XLSX file: {str(e)}")
             if 'workbook' in locals():
                 try:
                     workbook.close()
-                except:
-                    pass
+                except Exception:
+                    pass  # Best-effort cleanup; original error will be re-raised
             
             # Provide user-friendly error message
             if 'corrupt' in str(e).lower() or 'invalid' in str(e).lower():
