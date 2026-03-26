@@ -599,6 +599,7 @@ class PublicCommentAnalyzerStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_11,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset("../backend/status_handler"),
+            layers=[self.shared_layer],
             role=self.lambda_role,
             timeout=Duration.seconds(10),
             environment={
