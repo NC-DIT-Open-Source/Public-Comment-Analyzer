@@ -57,7 +57,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   resultsError: string | null = null;
   private analysisRetryTimer: any = null;
   private analysisRetryCount: number = 0;
-  private readonly MAX_ANALYSIS_RETRIES = 60; // 60 retries * 5s = 5 minutes max wait
+  private readonly MAX_ANALYSIS_RETRIES = 96; // 96 retries * 5s = 8 minutes max wait
 
   // Dashboard state
   dashboardPrompt: string = '';
