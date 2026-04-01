@@ -31,7 +31,7 @@ JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
 
 # Constants
 CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
-CLAUDE_SONNET_MODEL_ID = "us.anthropic.claude-sonnet-4-6-v1"
+CLAUDE_HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 CHUNK_SIZE = 150  # rows per chunk for map-reduce summarization
 MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
 
@@ -466,9 +466,9 @@ Be specific and cite percentages where applicable. Focus on actionable insights 
     return prompt
 
 
-def _call_bedrock_sonnet(prompt: str) -> str:
+def _call_bedrock_haiku(prompt: str) -> str:
     """
-    Call AWS Bedrock with Claude Sonnet model for chunk summarization.
+    Call AWS Bedrock with Claude Haiku model for chunk summarization.
     
     Args:
         prompt: Summarization prompt
@@ -481,7 +481,7 @@ def _call_bedrock_sonnet(prompt: str) -> str:
     for attempt in range(max_retries):
         try:
             response = _get_bedrock_runtime().invoke_model(
-                modelId=CLAUDE_SONNET_MODEL_ID,
+                modelId=CLAUDE_HAIKU_MODEL_ID,
                 contentType="application/json",
                 accept="application/json",
                 body=json.dumps({
@@ -502,10 +502,10 @@ def _call_bedrock_sonnet(prompt: str) -> str:
         except Exception as e:
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
-                logger.warning(f"Sonnet call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                logger.warning(f"Haiku call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
                 continue
             else:
-                logger.error(f"Sonnet call failed after {max_retries} attempts: {str(e)}")
+                logger.error(f"Haiku call failed after {max_retries} attempts: {str(e)}")
                 raise e
 
 
@@ -556,7 +556,7 @@ Summarize the key themes, arguments, and patterns in these responses. For each t
 
 Be concise but thorough. Focus on substance, not style."""
         
-        summary = _call_bedrock_sonnet(prompt)
+        summary = _call_bedrock_haiku(prompt)
         return f"Chunk {chunk_index + 1} ({len(chunk)} responses):\n{summary}"
     
     # Run chunk summarizations in parallel

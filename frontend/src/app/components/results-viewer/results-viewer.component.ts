@@ -43,7 +43,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   renderedAnalysis: SafeHtml = '';
   private analysisRetryTimer: any = null;
   private analysisRetryCount: number = 0;
-  private readonly MAX_ANALYSIS_RETRIES = 60;
+  private readonly MAX_ANALYSIS_RETRIES = 96; // 96 retries * 5s = 8 minutes max wait
 
   // Dashboard state
   dashboardPrompt: string = '';
