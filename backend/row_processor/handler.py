@@ -849,6 +849,11 @@ Respond in JSON format with keys matching the column names exactly. Only include
             response_body = json.loads(response['body'].read())
             content = response_body['content'][0]['text']
             
+            # Log response for debugging empty results
+            if not content or len(content.strip()) < 10:
+                logger.warning(f"Row got suspiciously short response: '{content[:200]}'")
+                logger.warning(f"Full response_body keys: {list(response_body.keys())}")
+            
             # Extract JSON from response (handle markdown code blocks)
             try:
                 # Try to parse directly first
@@ -887,6 +892,11 @@ Respond in JSON format with keys matching the column names exactly. Only include
                         result[col_name] = ''  # placeholder
                 else:
                     result[col_name] = raw_value
+            
+            # Log empty results for debugging
+            empty_cols = [k for k, v in result.items() if not v]
+            if empty_cols:
+                logger.warning(f"Empty result columns {empty_cols} from analysis_data: {json.dumps(analysis_data)[:300]}")
             
             # If some categorized columns didn't match, retry those specifically
             if needs_retry_columns:
