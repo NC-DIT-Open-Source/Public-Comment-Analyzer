@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 from datetime import datetime, timezone
 import boto3
 from botocore.exceptions import ClientError
+from botocore.config import Config
 
 # Shared modules are provided via Lambda Layer (/opt/python/) at runtime.
 # For local testing, fall back to the sibling shared/ directory.
@@ -69,10 +70,16 @@ def _get_dynamodb():
 
 
 def _get_bedrock_runtime():
-    """Get or create Bedrock runtime client."""
+    """Get or create Bedrock runtime client with connection pool sized for concurrency."""
     global _bedrock_runtime
     if _bedrock_runtime is None:
-        _bedrock_runtime = boto3.client('bedrock-runtime')
+        _bedrock_runtime = boto3.client(
+            'bedrock-runtime',
+            config=Config(
+                max_pool_connections=CONCURRENT_WORKERS,
+                retries={'max_attempts': 3, 'mode': 'adaptive'}
+            )
+        )
     return _bedrock_runtime
 
 
