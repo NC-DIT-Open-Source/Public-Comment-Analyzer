@@ -737,6 +737,16 @@ def _process_rows(job_id: str, parsed_file: ParsedFile,
         logger.warning(f"Processing completed with {len(error_records)} errors out of {total_rows} rows")
         _update_job_status(job_id, 'completed', total_rows, total_rows, error_records)
     
+    # Log job processing summary for operational monitoring
+    empty_count = sum(
+        1 for row in processed_rows if row and 
+        all(not row.get(col['name']) for col in analysis_columns)
+    )
+    if empty_count > 0:
+        logger.warning(f"Job {job_id} summary: {total_rows} rows, {len(error_records)} errors, {empty_count} rows with all-empty analysis")
+    else:
+        logger.info(f"Job {job_id} summary: {total_rows} rows processed successfully, {len(error_records)} errors")
+    
     return processed_rows
 
 
@@ -847,40 +857,58 @@ Respond in JSON format with keys matching the column names exactly. Only include
             
             # Parse response
             response_body = json.loads(response['body'].read())
-            content = response_body['content'][0]['text']
+            content = response_body['content'][0]['text'].strip()
             
-            # Log response for debugging empty results
-            if not content or len(content.strip()) < 10:
-                logger.warning(f"Row got suspiciously short response: '{content[:200]}'")
-                logger.warning(f"Full response_body keys: {list(response_body.keys())}")
+            # Extract JSON from response (handle markdown code blocks and whitespace)
+            analysis_data = None
             
-            # Extract JSON from response (handle markdown code blocks)
+            # First try: direct JSON parse
             try:
-                # Try to parse directly first
                 analysis_data = json.loads(content)
             except json.JSONDecodeError:
-                # If that fails, try to extract JSON from markdown code blocks
-                json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', content, re.DOTALL)
+                pass
+            
+            # Second try: extract from markdown code blocks (```json ... ``` or ``` ... ```)
+            if analysis_data is None:
+                json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', content, re.DOTALL)
                 if json_match:
-                    json_str = json_match.group(1).strip()
                     try:
-                        analysis_data = json.loads(json_str)
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid JSON in markdown block (attempt {attempt + 1}/{max_retries})")
-                        logger.warning(f"Response content: {content[:200]}...")
-                        raise ValueError(f"Invalid JSON response from AI model: {str(e)}")
-                else:
-                    # Log the invalid JSON response
-                    logger.warning(f"Invalid JSON response from Bedrock (attempt {attempt + 1}/{max_retries})")
-                    logger.warning(f"Response content: {content[:200]}...")
-                    raise ValueError(f"Invalid JSON response from AI model: No JSON found in response")
+                        analysis_data = json.loads(json_match.group(1).strip())
+                    except json.JSONDecodeError:
+                        pass
+            
+            # Third try: find first { ... } in the response
+            if analysis_data is None:
+                brace_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if brace_match:
+                    try:
+                        analysis_data = json.loads(brace_match.group(0))
+                    except json.JSONDecodeError:
+                        pass
+            
+            if analysis_data is None:
+                logger.warning(f"Could not extract JSON from Bedrock response (attempt {attempt + 1}/{max_retries}): {content[:300]}")
+                raise ValueError(f"Invalid JSON response from AI model: No JSON found in response")
+            
+            # Build a case-insensitive lookup from the model response
+            analysis_data_lower = {k.lower(): v for k, v in analysis_data.items()}
+            
+            # Log key mismatches for operational visibility (case or naming differences)
+            expected_keys = {col['name'] for col in analysis_columns}
+            returned_keys = set(analysis_data.keys())
+            if expected_keys != returned_keys:
+                logger.info(f"Column key mismatch — expected: {expected_keys}, got: {returned_keys}")
             
             # Ensure all expected columns are present and validate categorized columns
             result = {}
             needs_retry_columns = []
+            missing_columns = []
             for col in analysis_columns:
-                raw_value = str(analysis_data.get(col['name'], ''))
                 col_name = col['name']
+                raw_value = str(analysis_data_lower.get(col_name.lower(), ''))
+                
+                if not raw_value:
+                    missing_columns.append(col_name)
                 
                 if col_name in categorized_columns:
                     valid_options = categorized_columns[col_name]
@@ -893,10 +921,8 @@ Respond in JSON format with keys matching the column names exactly. Only include
                 else:
                     result[col_name] = raw_value
             
-            # Log empty results for debugging
-            empty_cols = [k for k, v in result.items() if not v]
-            if empty_cols:
-                logger.warning(f"Empty result columns {empty_cols} from analysis_data: {json.dumps(analysis_data)[:300]}")
+            if missing_columns:
+                logger.warning(f"Missing columns after case-insensitive match: {missing_columns}. Response keys: {list(analysis_data.keys())}")
             
             # If some categorized columns didn't match, retry those specifically
             if needs_retry_columns:
