@@ -263,7 +263,24 @@ export class ColumnDefinitionComponent implements OnInit {
       },
       error: (error) => {
         this.isProcessing = false;
-        this.errorMessage = error.error?.message || 'Failed to start processing. Please try again.';
+        const body = error.error;
+        const code = body?.error?.code;
+        const msg = body?.error?.message;
+
+        const friendlyMessages: Record<string, string> = {
+          'INSTRUCTIONS_TOO_LONG': 'Your analysis instructions are too long. Try shortening the descriptions on your options or instructions.',
+          'TOO_MANY_COLUMNS': 'You have too many analysis columns. Please remove some and try again.',
+          'TOO_MANY_OPTIONS': 'One of your categorized columns has too many options (max 50).',
+          'INVALID_CATEGORIZED_COLUMN': 'Categorized columns need at least 2 options.',
+          'INVALID_OPTION': 'Each option needs both a value and a description.',
+          'COLUMN_NAME_TOO_LONG': 'One of your column names is too long. Please shorten it.',
+          'MISSING_FILE_ID': 'No file was found. Please go back and upload your file again.',
+          'MISSING_ANALYSIS_COLUMNS': 'Please define at least one analysis column.',
+          'INVALID_ANALYSIS_COLUMN': 'One of your columns is missing required fields. Please check and try again.',
+          'UNAUTHORIZED': 'Access denied. Please check your access key and try again.',
+        };
+
+        this.errorMessage = friendlyMessages[code] || msg || 'Failed to start processing. Please try again.';
       }
     });
   }

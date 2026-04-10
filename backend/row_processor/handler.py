@@ -167,7 +167,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Limit number of analysis columns
         MAX_ANALYSIS_COLUMNS = 20
-        MAX_INSTRUCTION_LENGTH = 1000
+        MAX_INSTRUCTION_LENGTH = 15000
         MAX_COLUMN_NAME_LENGTH = 100
         
         if len(analysis_columns) > MAX_ANALYSIS_COLUMNS:
@@ -278,7 +278,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         }
                     })
                 }
-            if len(col['instructions']) > MAX_INSTRUCTION_LENGTH:
+            # Only enforce instruction length for open_text columns;
+            # categorized columns auto-generate instructions from options
+            if col_type != 'categorized' and len(col.get('instructions', '')) > MAX_INSTRUCTION_LENGTH:
                 return {
                     'statusCode': 400,
                     'headers': {
