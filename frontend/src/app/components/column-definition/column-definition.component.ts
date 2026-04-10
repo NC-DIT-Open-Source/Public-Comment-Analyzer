@@ -37,6 +37,8 @@ export class ColumnDefinitionComponent implements OnInit {
   editingIndex: number | null = null;
   fileMetadata: FileMetadata | null = null;
   fileName: string = '';
+  selectedCommentColumn: string | null = null;
+  contextDescription: string | null = null;
   isProcessing = false;
   errorMessage: string | null = null;
   columnType: 'open_text' | 'categorized' = 'open_text';
@@ -57,6 +59,8 @@ export class ColumnDefinitionComponent implements OnInit {
     if (navigation?.extras.state) {
       this.fileMetadata = navigation.extras.state['fileMetadata'];
       this.fileName = navigation.extras.state['fileName'] || 'uploaded file';
+      this.selectedCommentColumn = navigation.extras.state['selectedCommentColumn'] || null;
+      this.contextDescription = navigation.extras.state['contextDescription'] || null;
     }
   }
 
@@ -72,6 +76,8 @@ export class ColumnDefinitionComponent implements OnInit {
         console.log('Found fileMetadata in history.state');
         this.fileMetadata = state.fileMetadata;
         this.fileName = state.fileName || 'uploaded file';
+        this.selectedCommentColumn = state.selectedCommentColumn || null;
+        this.contextDescription = state.contextDescription || null;
       } else {
         console.log('No fileMetadata found, redirecting to upload');
         this.router.navigate(['/upload']);
@@ -238,7 +244,12 @@ export class ColumnDefinitionComponent implements OnInit {
   }
 
   startProcessing(): void {
-    if (this.columns.length === 0 || !this.fileMetadata) {
+    if (!this.fileMetadata || !this.selectedCommentColumn || !this.contextDescription) {
+      this.router.navigate(['/upload']);
+      return;
+    }
+
+    if (this.columns.length === 0) {
       this.errorMessage = 'Please define at least one analysis column';
       return;
     }
@@ -248,6 +259,8 @@ export class ColumnDefinitionComponent implements OnInit {
 
     const request = {
       fileId: this.fileMetadata.fileId,
+      selectedCommentColumn: this.selectedCommentColumn!,
+      contextDescription: this.contextDescription!,
       analysisColumns: this.columns
     };
 

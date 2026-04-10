@@ -1,0 +1,80 @@
+@use '../../../styles/variables' as *;
+
+.picker-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: $spacing-xl $spacing-md;
+  background-color: $color-gray-light;
+}
+
+.picker-card {
+  width: 100%;
+  max-width: 600px;
+  background-color: $color-white;
+
+  mat-card-title {
+    color: $color-primary;
+    font-size: $font-size-h3;
+    font-weight: $font-weight-bold;
+    font-family: $font-family-primary;
+  }
+
+  mat-card-subtitle {
+    color: $color-secondary-dark;
+    font-family: $font-family-primary;
+    margin-top: $spacing-xs;
+  }
+}
+
+.form-section {
+  margin-bottom: $spacing-lg;
+}
+
+.section-heading {
+  color: $color-primary;
+  font-size: $font-size-body;
+  font-weight: $font-weight-bold;
+  font-family: $font-family-primary;
+  margin-bottom: $spacing-xs;
+}
+
+.section-description {
+  color: $color-gray-dark;
+  font-size: 1rem;
+  font-family: $font-family-primary;
+  margin-bottom: 0.75rem;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $spacing-sm $spacing-md $spacing-md;
+  gap: $spacing-md;
+}
+
+.back-btn {
+  color: $color-primary;
+  border-color: $color-primary;
+}
+
+.next-btn {
+  background-color: $color-secondary-dark-text;
+  color: $color-white;
+
+  &:hover:not(:disabled) {
+    background-color: $color-secondary-dark;
+  }
+
+  &:disabled {
+    background-color: #b0c4d8;
+    color: $color-white;
+    cursor: not-allowed;
+  }
+}
