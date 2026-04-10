@@ -17,6 +17,8 @@ export interface AnalysisColumn {
 
 export interface ProcessingRequest {
   fileId: string;
+  selectedCommentColumn: string;
+  contextDescription: string;
   analysisColumns: AnalysisColumn[];
 }
 
