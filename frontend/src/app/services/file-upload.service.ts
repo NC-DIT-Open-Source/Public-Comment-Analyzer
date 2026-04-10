@@ -7,6 +7,8 @@ export interface FileMetadata {
   fileId: string;
   columns: string[];
   rowCount: number;
+  selectedCommentColumn?: string | null;
+  contextDescription?: string | null;
 }
 
 @Injectable({
