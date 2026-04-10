@@ -36,6 +36,13 @@ CHUNK_SIZE = 150  # rows per chunk for map-reduce summarization
 MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
 
 
+def _sanitize_for_prompt(text: str) -> str:
+    """Strip characters and patterns commonly used in prompt injection."""
+    sanitized = text.replace('```', '')
+    sanitized = ' '.join(sanitized.split())
+    return sanitized[:5000]
+
+
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment, falling back to '*'."""
     origin = os.environ.get('ALLOWED_ORIGIN')
@@ -205,9 +212,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Format data for aggregate analysis
         formatted_data = _format_data_for_analysis(parsed_file, job_record['analysisColumns'])
-        
+
+        context_description = job_record.get('contextDescription', '')
+
         # Construct prompt for Claude Opus
-        prompt = _construct_aggregate_prompt(formatted_data, job_record['analysisColumns'])
+        prompt = _construct_aggregate_prompt(formatted_data, job_record['analysisColumns'],
+                                            context_description=context_description)
         
         # Call Bedrock with Claude Opus 4.6
         aggregate_analysis = _call_bedrock_opus(prompt)
@@ -416,8 +426,9 @@ Sample Processed Comments (for cross-column context):
     return formatted_data
 
 
-def _construct_aggregate_prompt(formatted_data: str, 
-                                analysis_columns: List[Dict[str, str]]) -> str:
+def _construct_aggregate_prompt(formatted_data: str,
+                                analysis_columns: List[Dict[str, str]],
+                                context_description: str = None) -> str:
     """
     Construct prompt for Claude Opus aggregate analysis.
     
@@ -440,7 +451,12 @@ def _construct_aggregate_prompt(formatted_data: str,
         else:
             column_descriptions.append(f"- {col['name']} (Open Text): {col['instructions']}")
     
-    prompt = f"""You are analyzing a dataset of public comments that have been individually processed and categorized.
+    sanitized_context = _sanitize_for_prompt(context_description) if context_description else None
+    preamble = "You are analyzing a dataset of public comments that have been individually processed and categorized."
+    if sanitized_context:
+        preamble += f"\n\n<context_description>{sanitized_context}</context_description>"
+
+    prompt = f"""{preamble}
 
 The following analysis columns were applied to each comment:
 {chr(10).join(column_descriptions)}

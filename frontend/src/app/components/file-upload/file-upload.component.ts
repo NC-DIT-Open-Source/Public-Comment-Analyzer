@@ -101,8 +101,8 @@ export class FileUploadComponent {
           fileMetadata: metadata,
           fileName: this.selectedFile?.name
         });
-        this.router.navigate(['/define-columns'], {
-          state: { 
+        this.router.navigate(['/select-comment-column'], {
+          state: {
             fileMetadata: metadata,
             fileName: this.selectedFile?.name || 'uploaded file'
           }
