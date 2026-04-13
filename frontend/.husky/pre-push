@@ -17,7 +17,7 @@ for lambda_dir in shared upload_handler row_processor aggregate_analyzer; do
     dir="backend/$lambda_dir"
     if ls "$dir"/test_*.py 1>/dev/null 2>&1; then
         echo "▶ Testing backend/$lambda_dir..."
-        if ! (cd "$dir" && python -m pytest test_*.py -q --tb=short); then
+        if ! (cd "$dir" && python3 -m pytest test_*.py -q --tb=short); then
             FAILED=1
         fi
         echo ""
