@@ -89,3 +89,7 @@ local-env.json
 # AWS
 .aws-sam/
 samconfig.toml
+
+# Playwright MCP artifacts
+.playwright-mcp/
+e2e-*.png

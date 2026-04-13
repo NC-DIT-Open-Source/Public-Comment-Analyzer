@@ -290,6 +290,10 @@ export class ColumnDefinitionComponent implements OnInit {
           'MISSING_FILE_ID': 'No file was found. Please go back and upload your file again.',
           'MISSING_ANALYSIS_COLUMNS': 'Please define at least one analysis column.',
           'INVALID_ANALYSIS_COLUMN': 'One of your columns is missing required fields. Please check and try again.',
+          'MISSING_COMMENT_COLUMN': 'Session expired or page was cached. Please go back to upload and start again.',
+          'MISSING_CONTEXT_DESCRIPTION': 'Session expired or page was cached. Please go back to upload and start again.',
+          'COMMENT_COLUMN_TOO_LONG': 'The selected comment column name is too long.',
+          'CONTEXT_TOO_LONG': 'Your context description is too long (max 200 characters).',
           'UNAUTHORIZED': 'Access denied. Please check your access key and try again.',
         };
 
