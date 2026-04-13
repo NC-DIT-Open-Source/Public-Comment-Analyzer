@@ -4,11 +4,13 @@ echo "🧪 Running pre-push tests..."
 echo ""
 
 # --- Backend tests ---
-# Activate venv if present
-if [ -d ".venv" ]; then
-    . .venv/bin/activate
-elif [ -d "venv" ]; then
-    . venv/bin/activate
+# Use venv python if present, otherwise fall back to system python3
+if [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+elif [ -x "venv/bin/python" ]; then
+    PYTHON="venv/bin/python"
+else
+    PYTHON="python3"
 fi
 
 FAILED=0
@@ -17,7 +19,7 @@ for lambda_dir in shared upload_handler row_processor aggregate_analyzer; do
     dir="backend/$lambda_dir"
     if ls "$dir"/test_*.py 1>/dev/null 2>&1; then
         echo "▶ Testing backend/$lambda_dir..."
-        if ! (cd "$dir" && python3 -m pytest test_*.py -q --tb=short); then
+        if ! (cd "$dir" && ../../$PYTHON -m pytest test_*.py -q --tb=short); then
             FAILED=1
         fi
         echo ""
