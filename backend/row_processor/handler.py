@@ -250,6 +250,69 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 }
                             })
                         }
+                # Optional few-shot examples: each must pair a comment with a label
+                # and the label must reference a defined option value.
+                examples = col.get('examples') or []
+                MAX_EXAMPLES_PER_COLUMN = 5
+                MAX_EXAMPLE_TEXT_LENGTH = 2000
+                if len(examples) > MAX_EXAMPLES_PER_COLUMN:
+                    return {
+                        'statusCode': 400,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': _cors_origin()
+                        },
+                        'body': json.dumps({
+                            'error': {
+                                'code': 'TOO_MANY_EXAMPLES',
+                                'message': f'Each categorized column may have at most {MAX_EXAMPLES_PER_COLUMN} examples'
+                            }
+                        })
+                    }
+                valid_option_values = {o['value'] for o in options}
+                for ex in examples:
+                    if not ex.get('commentText') or not ex.get('label'):
+                        return {
+                            'statusCode': 400,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': _cors_origin()
+                            },
+                            'body': json.dumps({
+                                'error': {
+                                    'code': 'INVALID_EXAMPLE',
+                                    'message': 'Each example must have both commentText and label'
+                                }
+                            })
+                        }
+                    if ex['label'] not in valid_option_values:
+                        return {
+                            'statusCode': 400,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': _cors_origin()
+                            },
+                            'body': json.dumps({
+                                'error': {
+                                    'code': 'INVALID_EXAMPLE',
+                                    'message': f"Example label '{ex['label']}' is not one of the column's option values"
+                                }
+                            })
+                        }
+                    if len(ex['commentText']) > MAX_EXAMPLE_TEXT_LENGTH:
+                        return {
+                            'statusCode': 400,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': _cors_origin()
+                            },
+                            'body': json.dumps({
+                                'error': {
+                                    'code': 'EXAMPLE_TEXT_TOO_LONG',
+                                    'message': f'Example commentText must be {MAX_EXAMPLE_TEXT_LENGTH} characters or fewer'
+                                }
+                            })
+                        }
             else:
                 if not col.get('instructions'):
                     return {
@@ -876,6 +939,7 @@ def _process_single_row(row: Dict[str, str],
     # Build per-column instructions, differentiating open_text vs categorized
     analysis_instructions_parts = []
     categorized_columns = {}  # col_name -> list of valid option values
+    examples_blocks = []      # rendered <examples> blocks for each column that has them
     for col in analysis_columns:
         col_type = col.get('type', 'open_text')
         if col_type == 'categorized' and col.get('options'):
@@ -888,12 +952,23 @@ def _process_single_row(row: Dict[str, str],
                 f"- {col['name']}: You MUST respond with EXACTLY one of the following values (no other text):\n{options_text}"
             )
             categorized_columns[col['name']] = [opt['value'] for opt in options]
+
+            col_examples = col.get('examples') or []
+            if col_examples:
+                rendered = "\n".join([
+                    f'  <example>\n    <comment>{_sanitize_for_prompt(str(ex["commentText"]))}</comment>\n    <{col["name"]}>{ex["label"]}</{col["name"]}>\n  </example>'
+                    for ex in col_examples
+                ])
+                examples_blocks.append(
+                    f'For column "{col["name"]}", here are correctly-classified examples:\n<examples>\n{rendered}\n</examples>'
+                )
         else:
             analysis_instructions_parts.append(
                 f"- {col['name']}: {col['instructions']}"
             )
-    
+
     analysis_instructions = "\n".join(analysis_instructions_parts)
+    examples_section = ("\n\n" + "\n\n".join(examples_blocks)) if examples_blocks else ""
     
     # Construct prompt with injection-resistant framing
     sanitized_context = _sanitize_for_prompt(context_description) if context_description else None
@@ -901,7 +976,7 @@ def _process_single_row(row: Dict[str, str],
     if sanitized_context:
         prompt_preamble += f"\n\n<context_description>{sanitized_context}</context_description>"
 
-    prompt = f"""{prompt_preamble}
+    prompt = f"""{prompt_preamble}{examples_section}
 
 <comment_data>
 {comment_text}
@@ -912,26 +987,33 @@ Please provide the following analysis:
 
 Respond in JSON format with keys matching the column names exactly. Only include the JSON object, no other text."""
     
-    # Call Bedrock with retry logic
+    # Call Bedrock with retry logic.
+    # When any categorized column is present we pin temperature=0 so that classifications
+    # are deterministic across re-runs — open-text-only runs keep Bedrock's default to
+    # preserve summary variety.
+    request_body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 500,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+    if categorized_columns:
+        request_body["temperature"] = 0
+
     max_retries = 3
     last_error = None
-    
+
     for attempt in range(max_retries):
         try:
             response = _get_bedrock_runtime().invoke_model(
                 modelId=CLAUDE_HAIKU_MODEL_ID,
                 contentType="application/json",
                 accept="application/json",
-                body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 500,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
-                })
+                body=json.dumps(request_body)
             )
             
             # Parse response
@@ -1129,6 +1211,7 @@ Respond with ONLY the chosen value, no JSON, no quotes, no explanation. Just the
                     body=json.dumps({
                         "anthropic_version": "bedrock-2023-05-31",
                         "max_tokens": 50,
+                        "temperature": 0,
                         "messages": [
                             {"role": "user", "content": retry_prompt}
                         ]

@@ -8,11 +8,17 @@ export interface CategoryOption {
   description: string;
 }
 
+export interface CategoryExample {
+  commentText: string;
+  label: string;
+}
+
 export interface AnalysisColumn {
   name: string;
   instructions: string;
   type: 'open_text' | 'categorized';
   options?: CategoryOption[];
+  examples?: CategoryExample[];
 }
 
 export interface ProcessingRequest {

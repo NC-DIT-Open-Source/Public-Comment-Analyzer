@@ -178,6 +178,204 @@ class TestRowProcessorHandler(unittest.TestCase):
         
         self.assertEqual(mock_bedrock.invoke_model.call_count, 3)
     
+    @patch('handler._get_bedrock_runtime')
+    def test_categorized_column_uses_temperature_zero(self, mock_get_bedrock):
+        """When any categorized column is present, Bedrock is called with temperature=0 for determinism."""
+        mock_bedrock = MagicMock()
+        mock_get_bedrock.return_value = mock_bedrock
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps({
+                'content': [{'text': json.dumps({'support': 'Support'})}]
+            }).encode('utf-8')))
+        }
+
+        row = {'comment': 'Legalize it'}
+        analysis_columns = [{
+            'name': 'support',
+            'type': 'categorized',
+            'options': [
+                {'value': 'Support', 'description': 'In favor'},
+                {'value': 'Oppose', 'description': 'Against'}
+            ]
+        }]
+
+        _process_single_row(row, analysis_columns)
+
+        body = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])
+        self.assertEqual(body.get('temperature'), 0,
+                         f"Expected temperature=0 for categorized columns, got body={body}")
+
+    @patch('handler._get_bedrock_runtime')
+    def test_open_text_only_does_not_force_temperature(self, mock_get_bedrock):
+        """Open-text-only runs leave temperature unset so Bedrock uses its default."""
+        mock_bedrock = MagicMock()
+        mock_get_bedrock.return_value = mock_bedrock
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps({
+                'content': [{'text': json.dumps({'summary': 'A summary.'})}]
+            }).encode('utf-8')))
+        }
+
+        row = {'comment': 'Some comment text'}
+        analysis_columns = [{'name': 'summary', 'instructions': 'One sentence.'}]
+
+        _process_single_row(row, analysis_columns)
+
+        body = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])
+        self.assertNotIn('temperature', body,
+                         "Open-text-only runs should not set temperature explicitly")
+
+    @patch('handler._get_bedrock_runtime')
+    def test_retry_call_uses_temperature_zero(self, mock_get_bedrock):
+        """Categorized retry calls always use temperature=0."""
+        mock_bedrock = MagicMock()
+        mock_get_bedrock.return_value = mock_bedrock
+
+        # First call returns an unmatched value to trigger retry path; retry returns valid value
+        mock_bedrock.invoke_model.side_effect = [
+            {
+                'body': MagicMock(read=MagicMock(return_value=json.dumps({
+                    'content': [{'text': json.dumps({'support': 'banana'})}]
+                }).encode('utf-8')))
+            },
+            {
+                'body': MagicMock(read=MagicMock(return_value=json.dumps({
+                    'content': [{'text': 'Support'}]
+                }).encode('utf-8')))
+            }
+        ]
+
+        row = {'comment': 'I support this'}
+        analysis_columns = [{
+            'name': 'support',
+            'type': 'categorized',
+            'options': [
+                {'value': 'Support', 'description': 'In favor'},
+                {'value': 'Oppose', 'description': 'Against'}
+            ]
+        }]
+
+        _process_single_row(row, analysis_columns)
+
+        # Verify both calls used temperature=0
+        self.assertGreaterEqual(mock_bedrock.invoke_model.call_count, 2)
+        for call in mock_bedrock.invoke_model.call_args_list:
+            body = json.loads(call[1]['body'])
+            self.assertEqual(body.get('temperature'), 0,
+                             f"All categorized + retry calls should use temperature=0, got body={body}")
+
+    @patch('handler._get_bedrock_runtime')
+    def test_examples_are_rendered_into_prompt(self, mock_get_bedrock):
+        """Few-shot examples on a categorized column appear in the prompt as an <examples> block."""
+        mock_bedrock = MagicMock()
+        mock_get_bedrock.return_value = mock_bedrock
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps({
+                'content': [{'text': json.dumps({'support': 'Support'})}]
+            }).encode('utf-8')))
+        }
+
+        row = {'comment': 'I support legalization'}
+        analysis_columns = [{
+            'name': 'support',
+            'type': 'categorized',
+            'options': [
+                {'value': 'Support', 'description': 'In favor'},
+                {'value': 'Oppose', 'description': 'Against'}
+            ],
+            'examples': [
+                {'commentText': 'Legalize cannabis now!', 'label': 'Support'},
+                {'commentText': 'Cannabis should remain illegal.', 'label': 'Oppose'}
+            ]
+        }]
+
+        _process_single_row(row, analysis_columns)
+
+        prompt = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])['messages'][0]['content']
+        self.assertIn('<examples>', prompt, f"Expected <examples> block in prompt:\n{prompt}")
+        self.assertIn('</examples>', prompt)
+        self.assertIn('Legalize cannabis now!', prompt)
+        self.assertIn('Cannabis should remain illegal.', prompt)
+        # Each example should pair the comment text with its expected label
+        self.assertIn('Support', prompt)
+        self.assertIn('Oppose', prompt)
+
+    @patch('handler._get_bedrock_runtime')
+    def test_no_examples_omits_examples_block(self, mock_get_bedrock):
+        """When no examples are supplied, the prompt does not contain an <examples> block."""
+        mock_bedrock = MagicMock()
+        mock_get_bedrock.return_value = mock_bedrock
+        mock_bedrock.invoke_model.return_value = {
+            'body': MagicMock(read=MagicMock(return_value=json.dumps({
+                'content': [{'text': json.dumps({'support': 'Support'})}]
+            }).encode('utf-8')))
+        }
+
+        row = {'comment': 'Test'}
+        analysis_columns = [{
+            'name': 'support',
+            'type': 'categorized',
+            'options': [
+                {'value': 'Support', 'description': 'In favor'},
+                {'value': 'Oppose', 'description': 'Against'}
+            ]
+        }]
+
+        _process_single_row(row, analysis_columns)
+
+        prompt = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])['messages'][0]['content']
+        self.assertNotIn('<examples>', prompt)
+
+    def test_invalid_example_missing_label_returns_400(self):
+        """An example missing a label is rejected at the API layer."""
+        event = {
+            'body': json.dumps({
+                'fileId': str(uuid.uuid4()),
+                'selectedCommentColumn': 'comment',
+                'contextDescription': 'Test context',
+                'analysisColumns': [{
+                    'name': 'support',
+                    'type': 'categorized',
+                    'options': [
+                        {'value': 'Support', 'description': 'In favor'},
+                        {'value': 'Oppose', 'description': 'Against'}
+                    ],
+                    'examples': [
+                        {'commentText': 'A comment without a label'}
+                    ]
+                }]
+            })
+        }
+        response = lambda_handler(event, None)
+        self.assertEqual(response['statusCode'], 400)
+        body = json.loads(response['body'])
+        self.assertEqual(body['error']['code'], 'INVALID_EXAMPLE')
+
+    def test_too_many_examples_returns_400(self):
+        """More than 5 examples per column is rejected."""
+        event = {
+            'body': json.dumps({
+                'fileId': str(uuid.uuid4()),
+                'selectedCommentColumn': 'comment',
+                'contextDescription': 'Test context',
+                'analysisColumns': [{
+                    'name': 'support',
+                    'type': 'categorized',
+                    'options': [
+                        {'value': 'Support', 'description': 'In favor'},
+                        {'value': 'Oppose', 'description': 'Against'}
+                    ],
+                    'examples': [
+                        {'commentText': f'Example {i}', 'label': 'Support'} for i in range(6)
+                    ]
+                }]
+            })
+        }
+        response = lambda_handler(event, None)
+        self.assertEqual(response['statusCode'], 400)
+        body = json.loads(response['body'])
+        self.assertEqual(body['error']['code'], 'TOO_MANY_EXAMPLES')
+
     def test_prompt_includes_all_columns(self):
         """Test that prompt includes all analysis column instructions."""
         with patch('handler._get_bedrock_runtime') as mock_get_bedrock:
