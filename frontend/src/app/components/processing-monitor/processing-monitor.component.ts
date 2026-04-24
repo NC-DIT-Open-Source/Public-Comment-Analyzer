@@ -142,8 +142,12 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
             }
           } else if (status.status === 'failed') {
             this.hasFailed = true;
-            this.cdr.detectChanges(); // Force change detection
           }
+
+          // Angular 21 defaults to zoneless change detection, so HTTP callbacks
+          // don't auto-trigger CD. Force it after every status update so the
+          // stepper, progress bar, and preview UI all reflect the new state.
+          this.cdr.detectChanges();
         },
         error: (error) => {
           console.error('Error polling job status:', error);
