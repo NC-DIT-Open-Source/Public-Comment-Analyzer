@@ -586,7 +586,29 @@ class PublicCommentAnalyzerStack(Stack):
                 apigateway.MethodResponse(status_code="500")
             ]
         )
-        
+
+        # POST /api/process/{jobId}/preview-confirm - user confirms the preview classifications
+        # are reasonable; row processor then re-runs against the full file.
+        process_job_resource = process_resource.add_resource("{jobId}")
+        process_preview_confirm_resource = process_job_resource.add_resource("preview-confirm")
+        process_preview_confirm_resource.add_method(
+            "POST",
+            apigateway.LambdaIntegration(self.row_processor, proxy=True),
+            request_parameters={"method.request.path.jobId": True},
+            method_responses=[
+                apigateway.MethodResponse(
+                    status_code="200",
+                    response_parameters={
+                        "method.response.header.Access-Control-Allow-Origin": True
+                    }
+                ),
+                apigateway.MethodResponse(status_code="400"),
+                apigateway.MethodResponse(status_code="404"),
+                apigateway.MethodResponse(status_code="409"),
+                apigateway.MethodResponse(status_code="500")
+            ]
+        )
+
         # GET /api/status/{jobId} - query DynamoDB for job status
         status_resource = api_resource.add_resource("status")
         status_job_resource = status_resource.add_resource("{jobId}")
