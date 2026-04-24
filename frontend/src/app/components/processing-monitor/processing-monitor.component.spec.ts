@@ -13,7 +13,7 @@ describe('ProcessingMonitorComponent', () => {
   let mockResultsService: jasmine.SpyObj<ResultsService>;
 
   beforeEach(async () => {
-    mockProcessingService = jasmine.createSpyObj('ProcessingService', ['pollStatus']);
+    mockProcessingService = jasmine.createSpyObj('ProcessingService', ['pollStatus', 'confirmPreview']);
     mockResultsService = jasmine.createSpyObj('ResultsService', ['getResults']);
 
     await TestBed.configureTestingModule({
@@ -262,6 +262,81 @@ describe('ProcessingMonitorComponent', () => {
 
       expect(component.hasFailed).toBeTruthy();
       expect(console.error).toHaveBeenCalled();
+    }));
+  });
+
+  describe('Preview Step', () => {
+    const previewStatus: JobStatus = {
+      status: 'preview_ready',
+      progress: 20,
+      completedRows: 20,
+      totalRows: 200,
+      previewRows: [
+        { comment: 'I support legalization', support: 'Support', _error: '' },
+        { comment: 'Cannabis should remain illegal', support: 'Oppose', _error: '' }
+      ],
+      analysisColumns: [{
+        name: 'support',
+        instructions: 'Pro: Support; Against: Oppose',
+        type: 'categorized',
+        options: [
+          { value: 'Support', description: 'In favor' },
+          { value: 'Oppose', description: 'Against' }
+        ]
+      }],
+      selectedCommentColumn: 'comment'
+    };
+
+    it('renders the preview table when status is preview_ready', fakeAsync(() => {
+      mockProcessingService.pollStatus.and.returnValue(of(previewStatus));
+
+      component.jobId = 'preview-job';
+      component.ngOnInit();
+      tick();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const previewTable = compiled.querySelector('.preview-table');
+      expect(previewTable).toBeTruthy();
+      expect(compiled.textContent).toContain('I support legalization');
+      expect(compiled.textContent).toContain('Cannabis should remain illegal');
+      expect(compiled.textContent).toContain('Support');
+      expect(compiled.textContent).toContain('Oppose');
+    }));
+
+    it('shows a confirm button when status is preview_ready', fakeAsync(() => {
+      mockProcessingService.pollStatus.and.returnValue(of(previewStatus));
+      component.jobId = 'preview-job';
+      component.ngOnInit();
+      tick();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const confirmBtn = compiled.querySelector('.confirm-preview-btn') as HTMLButtonElement;
+      expect(confirmBtn).toBeTruthy();
+    }));
+
+    it('calls confirmPreview when the confirm button is clicked', fakeAsync(() => {
+      mockProcessingService.pollStatus.and.returnValue(of(previewStatus));
+      mockProcessingService.confirmPreview.and.returnValue(of({ jobId: 'preview-job', status: 'processing' }));
+
+      component.jobId = 'preview-job';
+      component.ngOnInit();
+      tick();
+      fixture.detectChanges();
+
+      component.confirmPreview();
+      expect(mockProcessingService.confirmPreview).toHaveBeenCalledWith('preview-job');
+    }));
+
+    it('does not load results while in preview_ready state', fakeAsync(() => {
+      mockProcessingService.pollStatus.and.returnValue(of(previewStatus));
+      component.jobId = 'preview-job';
+      component.ngOnInit();
+      tick();
+
+      expect(component.isComplete).toBeFalse();
+      expect(mockResultsService.getResults).not.toHaveBeenCalled();
     }));
   });
 

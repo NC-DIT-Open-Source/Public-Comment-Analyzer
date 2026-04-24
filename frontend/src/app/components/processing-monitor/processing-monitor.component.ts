@@ -1,7 +1,7 @@
 import { Component, Input, OnInit, OnDestroy, ViewEncapsulation, ChangeDetectorRef, ViewChildren, QueryList, ElementRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, ActivatedRoute } from '@angular/router';
+import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { MatStepperModule } from '@angular/material/stepper';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatCardModule } from '@angular/material/card';
@@ -34,7 +34,8 @@ Chart.register(...registerables);
     MatProgressSpinnerModule,
     MatFormFieldModule,
     MatInputModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    RouterModule
   ],
   templateUrl: './processing-monitor.component.html',
   styleUrl: './processing-monitor.component.scss',
@@ -48,6 +49,8 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   currentStep: number = 0;
   isComplete: boolean = false;
   hasFailed: boolean = false;
+  isConfirmingPreview: boolean = false;
+  previewError: string | null = null;
   private destroy$ = new Subject<void>();
 
   // Results
@@ -153,10 +156,33 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
   private updateStepFromStatus(status: JobStatus): void {
     switch (status.status) {
       case 'pending': this.currentStep = 0; break;
+      case 'preview_processing': this.currentStep = 1; break;
+      case 'preview_ready': this.currentStep = 1; break;
       case 'processing': this.currentStep = 1; break;
       case 'completed': this.currentStep = 2; break; // Stay on "Analyzing" until results load
       case 'failed': this.currentStep = 1; break;
     }
+  }
+
+  confirmPreview(): void {
+    if (!this.jobId || this.isConfirmingPreview) return;
+    this.isConfirmingPreview = true;
+    this.previewError = null;
+    this.processingService.confirmPreview(this.jobId).subscribe({
+      next: () => {
+        // Polling continues automatically — the next /status response will flip
+        // the job out of preview_ready into processing.
+        this.isConfirmingPreview = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Failed to confirm preview:', err);
+        this.previewError = err.error?.error?.message
+          || 'Failed to start full processing. Please try again.';
+        this.isConfirmingPreview = false;
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   loadResults(): void {
@@ -219,11 +245,22 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     if (!this.jobStatus) return 'Initializing...';
     switch (this.jobStatus.status) {
       case 'pending': return 'Preparing to process your file...';
+      case 'preview_processing': return `Classifying first ${this.jobStatus.totalRows} rows for preview...`;
+      case 'preview_ready': return 'Review the sample classifications below before continuing.';
       case 'processing': return `Processing ${this.jobStatus.completedRows} of ${this.jobStatus.totalRows} rows...`;
       case 'completed': return 'Processing complete!';
       case 'failed': return this.jobStatus.error || 'Processing failed. Please try again.';
       default: return 'Unknown status';
     }
+  }
+
+  get previewColumnNames(): string[] {
+    const cols = this.jobStatus?.analysisColumns || [];
+    return cols.map(c => c.name);
+  }
+
+  get previewCommentColumn(): string {
+    return this.jobStatus?.selectedCommentColumn || 'comment';
   }
 
   generateDashboard(): void {

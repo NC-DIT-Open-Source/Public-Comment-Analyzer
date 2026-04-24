@@ -37,6 +37,21 @@ JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
 CONCURRENT_WORKERS = 500  # Process up to 500 rows concurrently
 CLAUDE_HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
+# Preview-step constants. The preview phase runs the model on the first N rows
+# of a categorized job so the user can sanity-check classifications before
+# committing the full run. Skipped for files smaller than the threshold (the
+# overhead isn't worth it) and for open-text-only runs (no rubric to validate).
+PREVIEW_ROW_COUNT = 20
+PREVIEW_MIN_FILE_SIZE = 50
+
+
+def _should_use_preview(analysis_columns: List[Dict[str, Any]], total_rows: int) -> bool:
+    """Decide whether to run a preview phase before processing the full file."""
+    if total_rows < PREVIEW_MIN_FILE_SIZE:
+        return False
+    has_categorized = any(col.get('type') == 'categorized' for col in analysis_columns)
+    return has_categorized
+
 
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment, falling back to '*'."""
@@ -102,10 +117,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if event.get('asyncProcessing'):
         return _process_async(event, context)
 
+    # API Gateway routes the preview-confirm path here too — detect via pathParameters.
+    # Validate the access key check applies to all API Gateway invocations.
+    path_params = event.get('pathParameters') or {}
+    if path_params.get('jobId'):
+        if not validate_access_key(event):
+            return build_unauthorized_response(_cors_origin())
+        return _handle_preview_confirm(event, context, path_params['jobId'])
+
     # Validate access key for API Gateway invocations
     if not validate_access_key(event):
         return build_unauthorized_response(_cors_origin())
-    
+
     # This is an API Gateway invocation - create job and return immediately
     try:
         # Parse request body
@@ -415,11 +438,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             lambda_client = boto3.client('lambda', endpoint_url=local_endpoint, use_ssl=False)
         else:
             lambda_client = boto3.client('lambda')
+        phase = 'preview' if _should_use_preview(analysis_columns, row_count) else 'full'
         lambda_client.invoke(
             FunctionName=context.function_name,
             InvocationType='Event',  # Async invocation
             Payload=json.dumps({
                 'asyncProcessing': True,
+                'phase': phase,
                 'jobId': job_id,
                 'fileId': file_id,
                 'fileType': file_type,
@@ -511,6 +536,94 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 
+def _handle_preview_confirm(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str, Any]:
+    """Handle POST /process/{jobId}/preview-confirm: validate state, then async-invoke
+    the row processor to run the full file."""
+    headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': _cors_origin()
+    }
+
+    try:
+        uuid.UUID(job_id, version=4)
+    except ValueError:
+        return {
+            'statusCode': 400,
+            'headers': headers,
+            'body': json.dumps({'error': {
+                'code': 'INVALID_FILE_ID',
+                'message': 'jobId must be a valid UUID'
+            }})
+        }
+
+    try:
+        table = _get_dynamodb().Table(JOBS_TABLE_NAME)
+        result = table.get_item(Key={'jobId': job_id})
+        item = result.get('Item')
+    except ClientError as e:
+        logger.error(f"DynamoDB error fetching job {job_id}: {e}")
+        return {
+            'statusCode': 500,
+            'headers': headers,
+            'body': json.dumps({'error': {'code': 'AWS_ERROR',
+                                          'message': 'Failed to retrieve job state.'}})
+        }
+
+    if not item:
+        return {
+            'statusCode': 404,
+            'headers': headers,
+            'body': json.dumps({'error': {'code': 'JOB_NOT_FOUND',
+                                          'message': 'Job not found.'}})
+        }
+
+    if item.get('status') != 'preview_ready':
+        return {
+            'statusCode': 409,
+            'headers': headers,
+            'body': json.dumps({'error': {
+                'code': 'INVALID_JOB_STATE',
+                'message': f"Job is in state '{item.get('status')}', expected 'preview_ready'."
+            }})
+        }
+
+    # Re-derive the file type from the stored input key (e.g. uploads/<id>/input.csv)
+    input_key = item['inputFileKey']
+    file_type = input_key.rsplit('.', 1)[-1] if '.' in input_key else 'csv'
+
+    payload = {
+        'asyncProcessing': True,
+        'phase': 'confirm',
+        'jobId': job_id,
+        'fileId': item['fileId'],
+        'fileType': file_type,
+        'selectedCommentColumn': item.get('selectedCommentColumn'),
+        'contextDescription': item.get('contextDescription'),
+        'analysisColumns': item['analysisColumns'],
+        'inputKey': input_key,
+        'outputKey': item['outputFileKey']
+    }
+
+    local_endpoint = os.environ.get('LOCAL_LAMBDA_ENDPOINT')
+    if not local_endpoint and os.environ.get('AWS_SAM_LOCAL') == 'true':
+        local_endpoint = 'http://host.docker.internal:3001'
+    if local_endpoint:
+        lambda_client = boto3.client('lambda', endpoint_url=local_endpoint, use_ssl=False)
+    else:
+        lambda_client = boto3.client('lambda')
+    lambda_client.invoke(
+        FunctionName=context.function_name,
+        InvocationType='Event',
+        Payload=json.dumps(payload)
+    )
+
+    return {
+        'statusCode': 200,
+        'headers': headers,
+        'body': json.dumps({'jobId': job_id, 'status': 'processing'})
+    }
+
+
 def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Perform actual async processing of the file.
@@ -530,23 +643,26 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     analysis_columns = event['analysisColumns']
     input_key = event['inputKey']
     output_key = event['outputKey']
-    
+    phase = event.get('phase', 'full')
+
     try:
-        logger.info(f"Starting async processing for job {job_id}")
-        
-        # Update status to processing
-        _update_job_status(job_id, 'processing', 0, 0)
-        
+        logger.info(f"Starting async processing for job {job_id} (phase={phase})")
+
+        # Update status. Preview phase has its own status so the frontend can poll
+        # and surface the gating UI; full/confirm collapse into the same flow.
+        in_progress_status = 'preview_processing' if phase == 'preview' else 'processing'
+        _update_job_status(job_id, in_progress_status, 0, 0)
+
         # Download input file from S3
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_type}') as tmp_input:
             input_path = tmp_input.name
             _get_s3_client().download_file(DATA_BUCKET, input_key, input_path)
-        
+
         # Parse input file
         parser = FileParser()
         parsed_file = parser.parse(input_path, file_type)
-        
-        logger.info(f"Processing {parsed_file.row_count} rows")
+
+        logger.info(f"Processing {parsed_file.row_count} rows (phase={phase})")
 
         # Validate selected_comment_column exists in file headers (case-insensitive)
         if selected_comment_column:
@@ -557,35 +673,53 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     f"file headers {parsed_file.headers}. Will fall back to all columns per row."
                 )
 
-        # Process rows with Bedrock
+        if phase == 'preview':
+            # Slice the parsed file to the first N rows. Reuse the rest of the pipeline.
+            preview_size = min(PREVIEW_ROW_COUNT, parsed_file.row_count)
+            parsed_file.rows = parsed_file.rows[:preview_size]
+            parsed_file.row_count = preview_size
+
+            preview_rows = _process_rows(job_id, parsed_file, analysis_columns,
+                                         selected_comment_column, context_description)
+
+            # Persist preview results to DynamoDB and flip status to preview_ready.
+            # The user will hit POST /process/{jobId}/preview-confirm to continue.
+            _store_preview_rows(job_id, preview_rows, preview_size)
+            _update_job_status(job_id, 'preview_ready', preview_size, preview_size)
+
+            os.unlink(input_path)
+            logger.info(f"Preview completed for job {job_id} ({preview_size} rows)")
+            return {'statusCode': 200, 'body': 'Preview completed'}
+
+        # Full / confirm phase: process all rows
         processed_rows = _process_rows(job_id, parsed_file, analysis_columns,
                                        selected_comment_column, context_description)
-        
+
         # Write output file with error column
         output_headers = parsed_file.headers + [col['name'] for col in analysis_columns] + ['_error']
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_type}') as tmp_output:
             output_path = tmp_output.name
             writer = FileWriter()
             writer.write(output_headers, processed_rows, output_path, file_type)
-        
+
         # Upload output file to S3
         _get_s3_client().upload_file(output_path, DATA_BUCKET, output_key)
-        
+
         # Update job status to completed with result file key
-        _update_job_status(job_id, 'completed', parsed_file.row_count, parsed_file.row_count, 
+        _update_job_status(job_id, 'completed', parsed_file.row_count, parsed_file.row_count,
                           result_file_key=output_key)
-        
+
         # Clean up temp files
         os.unlink(input_path)
         os.unlink(output_path)
-        
+
         # Trigger aggregate analysis asynchronously so results are pre-computed
         _trigger_aggregate_analysis(job_id)
-        
+
         logger.info(f"Async processing completed for job {job_id}")
-        
+
         return {'statusCode': 200, 'body': 'Processing completed'}
-        
+
     except Exception as e:
         error_message = str(e)
         logger.error(f"Async processing failed for job {job_id}: {error_message}")
@@ -704,7 +838,37 @@ def _get_row_count(s3_key: str, file_type: str) -> int:
         return 0  # Return 0 if we can't determine
 
 
-def _update_job_status(job_id: str, status: str, completed_rows: int, 
+def _store_preview_rows(job_id: str, preview_rows: List[Dict[str, Any]], total_previewed: int) -> None:
+    """Persist preview-phase row results to the job record.
+
+    DynamoDB items are capped at 400 KB; with 20 rows of typical comment data
+    (a few hundred chars of comment + a handful of analysis columns) we land far
+    under that. If a single comment ever exceeds ~15 KB we truncate to keep the
+    item under the limit — the user only needs enough to validate classifications.
+    """
+    MAX_COMMENT_PREVIEW_LEN = 2000
+    sanitized: List[Dict[str, Any]] = []
+    for row in preview_rows:
+        sanitized_row: Dict[str, Any] = {}
+        for k, v in row.items():
+            value = '' if v is None else str(v)
+            if len(value) > MAX_COMMENT_PREVIEW_LEN:
+                value = value[:MAX_COMMENT_PREVIEW_LEN] + '…'
+            sanitized_row[k] = value
+        sanitized.append(sanitized_row)
+
+    table = _get_dynamodb().Table(JOBS_TABLE_NAME)
+    table.update_item(
+        Key={'jobId': job_id},
+        UpdateExpression="SET previewRows = :rows, previewedAt = :ts",
+        ExpressionAttributeValues={
+            ':rows': sanitized,
+            ':ts': datetime.now(timezone.utc).isoformat()
+        }
+    )
+
+
+def _update_job_status(job_id: str, status: str, completed_rows: int,
                       total_rows: int, errors: List[Dict[str, Any]] = None,
                       result_file_key: str = None) -> None:
     """

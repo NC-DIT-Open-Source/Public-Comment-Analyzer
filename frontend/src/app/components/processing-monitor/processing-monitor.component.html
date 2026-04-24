@@ -46,8 +46,59 @@
           </div>
         </ng-container>
 
+        <!-- Preview ready: show sample classifications + confirm/cancel -->
+        <ng-container *ngIf="jobStatus?.status === 'preview_ready' && !hasFailed">
+          <mat-icon class="step-icon">preview</mat-icon>
+          <p>{{ statusMessage }}</p>
+
+          <div class="preview-section">
+            <p class="preview-hint">
+              Below are <strong>{{ jobStatus?.previewRows?.length }}</strong> sample classifications from your file.
+              If they look reasonable, confirm to process the remaining
+              <strong>{{ (jobStatus?.totalRows || 0) - (jobStatus?.completedRows || 0) }}</strong> rows.
+              If they look wrong, cancel and revise your column definitions.
+            </p>
+
+            <div class="preview-table-wrapper">
+              <table class="preview-table" *ngIf="jobStatus?.previewRows?.length">
+                <thead>
+                  <tr>
+                    <th>{{ previewCommentColumn }}</th>
+                    <th *ngFor="let colName of previewColumnNames">{{ colName }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of jobStatus?.previewRows">
+                    <td class="preview-comment-cell">{{ row[previewCommentColumn] || '(empty)' }}</td>
+                    <td *ngFor="let colName of previewColumnNames">{{ row[colName] }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="preview-error" *ngIf="previewError" role="alert">
+              <mat-icon>error</mat-icon>
+              <span>{{ previewError }}</span>
+            </div>
+
+            <div class="preview-actions">
+              <button mat-raised-button color="primary"
+                      class="confirm-preview-btn"
+                      (click)="confirmPreview()"
+                      [disabled]="isConfirmingPreview">
+                <mat-icon>play_arrow</mat-icon>
+                {{ isConfirmingPreview ? 'Starting full run...' : 'Looks right — process all rows' }}
+              </button>
+              <button mat-button routerLink="/upload" [disabled]="isConfirmingPreview">
+                <mat-icon>arrow_back</mat-icon>
+                Cancel and revise
+              </button>
+            </div>
+          </div>
+        </ng-container>
+
         <!-- Analyzing -->
-        <ng-container *ngIf="currentStep === 2 && !hasFailed">
+        <ng-container *ngIf="currentStep === 2 && !hasFailed && jobStatus?.status !== 'preview_ready'">
           <mat-icon class="step-icon">analytics</mat-icon>
           <p>Generating aggregate analysis. This may take up to 10 minutes.</p>
         </ng-container>
