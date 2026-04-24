@@ -162,6 +162,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             return 'PublicCommentAnalyzer-StatusHandler-dev'
         if path == '/api/process' and method == 'POST':
             return 'PublicCommentAnalyzer-RowProcessor-dev'
+        if path.startswith('/api/process/') and path.endswith('/preview-confirm') and method == 'POST':
+            return 'PublicCommentAnalyzer-RowProcessor-dev'
         if path.startswith('/api/results/') and method == 'GET':
             return 'PublicCommentAnalyzer-AggregateAnalyzer-dev'
         if path.startswith('/api/dashboard/') and method == 'POST':
@@ -182,6 +184,11 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             job_id = path.split('/api/dashboard/', 1)[1].rstrip('/')
             if job_id:
                 return {'jobId': job_id}
+        if path.startswith('/api/process/') and path.endswith('/preview-confirm'):
+            # /api/process/{jobId}/preview-confirm
+            middle = path[len('/api/process/'):-len('/preview-confirm')].rstrip('/')
+            if middle:
+                return {'jobId': middle}
         return None
 
     def do_GET(self):

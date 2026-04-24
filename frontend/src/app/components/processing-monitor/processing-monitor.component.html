@@ -26,7 +26,7 @@
 
         <!-- Processing -->
         <ng-container *ngIf="currentStep === 1">
-          <mat-icon class="step-icon" *ngIf="!hasFailed">sync</mat-icon>
+          <mat-icon class="step-icon spinning" *ngIf="!hasFailed">sync</mat-icon>
           <mat-icon class="step-icon error" *ngIf="hasFailed">error</mat-icon>
           <p>{{ statusMessage }}</p>
 

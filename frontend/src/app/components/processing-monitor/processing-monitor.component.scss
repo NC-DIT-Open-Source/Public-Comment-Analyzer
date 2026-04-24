@@ -368,13 +368,11 @@
 
 @keyframes spin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to { transform: rotate(-360deg); }
 }
 
-.step-icon {
-  &:not(.success):not(.error) {
-    animation: spin 2s linear infinite;
-  }
+.step-icon.spinning {
+  animation: spin 2s linear infinite;
 }
 
 .preview-section {
