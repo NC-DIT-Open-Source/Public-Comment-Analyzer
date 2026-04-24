@@ -11,6 +11,7 @@ import json
 import base64
 import urllib.request
 import urllib.error
+import urllib.parse
 
 SAM_PORT = 3001
 LISTEN_PORT = 3000
@@ -19,6 +20,18 @@ CORS_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Access-Key',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS,PUT,DELETE',
 }
+
+# Allow-list of Lambda function names this proxy is permitted to invoke.
+# Any value reaching urlopen must come from this set — breaks SSRF taint flow
+# from request data (self.path / self.rfile) into the upstream URL.
+ALLOWED_FUNCTIONS = frozenset({
+    'PublicCommentAnalyzer-UploadHandler-dev',
+    'PublicCommentAnalyzer-AuthHandler-dev',
+    'PublicCommentAnalyzer-StatusHandler-dev',
+    'PublicCommentAnalyzer-RowProcessor-dev',
+    'PublicCommentAnalyzer-AggregateAnalyzer-dev',
+    'PublicCommentAnalyzer-DashboardGenerator-dev',
+})
 
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
@@ -78,7 +91,16 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         # Invoke via SAM local lambda endpoint
         try:
+            # Defense-in-depth: re-check function_name against the allow-list
+            # immediately before constructing the URL to make the SSRF guard
+            # explicit and local to the urlopen call.
+            assert function_name in ALLOWED_FUNCTIONS, 'function_name not in allow-list'
             invoke_url = f'http://127.0.0.1:{SAM_PORT}/2015-03-31/functions/{function_name}/invocations'
+            # Validate the constructed URL targets only the local SAM endpoint.
+            parsed = urllib.parse.urlparse(invoke_url)
+            assert parsed.scheme == 'http', 'invoke_url scheme must be http'
+            assert parsed.hostname == '127.0.0.1', 'invoke_url host must be 127.0.0.1'
+            assert parsed.port == SAM_PORT, 'invoke_url port must be SAM_PORT'
             req = urllib.request.Request(
                 invoke_url,
                 data=json.dumps(event).encode('utf-8'),
@@ -113,9 +135,17 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         for k, v in CORS_HEADERS.items():
             self.send_header(k, v)
         for k, v in resp_headers.items():
-            if k.lower().startswith('access-control'):
+            lk = k.lower()
+            if lk.startswith('access-control'):
                 continue  # We already set CORS headers
+            if lk == 'content-type':
+                continue  # Force-overridden below to prevent HTML sniffing
             self.send_header(k, v)
+        # Defense-in-depth: force JSON content-type and disable sniffing/script
+        # execution so a browser cannot render the proxied body as HTML.
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Content-Security-Policy', "default-src 'none'")
         self.end_headers()
         if resp_body:
             self.wfile.write(resp_body.encode('utf-8'))
