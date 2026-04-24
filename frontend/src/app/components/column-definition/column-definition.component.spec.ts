@@ -204,6 +204,116 @@ describe('ColumnDefinitionComponent', () => {
       }
       expect(component.optionsArray.length).toBeLessThanOrEqual(50);
     });
+
+    it('starts with zero examples', () => {
+      expect(component.examplesArray.length).toBe(0);
+    });
+
+    it('addExample adds an example with empty commentText and label', () => {
+      component.addExample();
+      expect(component.examplesArray.length).toBe(1);
+      expect(component.examplesArray.at(0).get('commentText')?.value).toBe('');
+      expect(component.examplesArray.at(0).get('label')?.value).toBe('');
+    });
+
+    it('removeExample removes the example at the given index', () => {
+      component.addExample();
+      component.addExample();
+      component.removeExample(0);
+      expect(component.examplesArray.length).toBe(1);
+    });
+
+    it('caps examples at 5 per column', () => {
+      for (let i = 0; i < 10; i++) {
+        component.addExample();
+      }
+      expect(component.examplesArray.length).toBe(5);
+    });
+
+    it('persists examples on the saved categorized column', () => {
+      component.columnForm.patchValue({ name: 'Stance' });
+      component.optionsArray.at(0).patchValue({ value: 'Pro', description: 'Supports' });
+      component.optionsArray.at(1).patchValue({ value: 'Against', description: 'Opposes' });
+      component.addExample();
+      component.examplesArray.at(0).patchValue({
+        commentText: 'I love this proposal.',
+        label: 'Pro'
+      });
+
+      component.addColumn();
+
+      expect(component.columns.length).toBe(1);
+      expect(component.columns[0].examples?.length).toBe(1);
+      expect(component.columns[0].examples?.[0].commentText).toBe('I love this proposal.');
+      expect(component.columns[0].examples?.[0].label).toBe('Pro');
+    });
+
+    it('blocks save when an example has commentText but no label', () => {
+      component.columnForm.patchValue({ name: 'Stance' });
+      component.optionsArray.at(0).patchValue({ value: 'Pro', description: 'Supports' });
+      component.optionsArray.at(1).patchValue({ value: 'Against', description: 'Opposes' });
+      component.addExample();
+      component.examplesArray.at(0).patchValue({
+        commentText: 'Has text but no label',
+        label: ''
+      });
+
+      component.addColumn();
+
+      expect(component.columns.length).toBe(0);
+      expect(component.errorMessage).toBeTruthy();
+    });
+
+    it('drops fully-empty example rows on save (so users can leave a blank slot)', () => {
+      component.columnForm.patchValue({ name: 'Stance' });
+      component.optionsArray.at(0).patchValue({ value: 'Pro', description: 'Supports' });
+      component.optionsArray.at(1).patchValue({ value: 'Against', description: 'Opposes' });
+      component.addExample();
+      // Leave both fields empty
+
+      component.addColumn();
+
+      expect(component.columns.length).toBe(1);
+      expect(component.columns[0].examples?.length || 0).toBe(0);
+    });
+
+    it('renders an Add Example button only when column type is categorized', () => {
+      // Already in categorized mode via outer describe's beforeEach
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const addExampleBtn = compiled.querySelector('.add-example-btn');
+      expect(addExampleBtn).toBeTruthy();
+    });
+
+    it('renders example rows after addExample is called', () => {
+      component.addExample();
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const exampleRows = compiled.querySelectorAll('.example-row');
+      expect(exampleRows.length).toBe(1);
+    });
+
+    it('repopulates examples when editing a categorized column', () => {
+      component.columns = [{
+        name: 'Stance',
+        instructions: 'Pro: Supports; Against: Opposes',
+        type: 'categorized',
+        options: [
+          { value: 'Pro', description: 'Supports' },
+          { value: 'Against', description: 'Opposes' }
+        ],
+        examples: [
+          { commentText: 'Yes please', label: 'Pro' },
+          { commentText: 'No way', label: 'Against' }
+        ]
+      }];
+
+      component.editColumn(0);
+
+      expect(component.examplesArray.length).toBe(2);
+      expect(component.examplesArray.at(0).get('commentText')?.value).toBe('Yes please');
+      expect(component.examplesArray.at(0).get('label')?.value).toBe('Pro');
+    });
   });
 
   describe('Column Type Toggle', () => {
@@ -313,6 +423,89 @@ describe('ColumnDefinitionComponent', () => {
 
       expect(component.editingIndex).toBeNull();
       expect(component.columnForm.get('name')?.value).toBeNull();
+    });
+  });
+
+  describe('Description Lint Warnings', () => {
+    beforeEach(() => {
+      component.onColumnTypeChange('categorized');
+    });
+
+    it('flags a description containing the poison word "default"', () => {
+      const warnings = component.getDescriptionWarnings(
+        'This is the default for comments that say "Legalize it".'
+      );
+      expect(warnings.some(w => w.toLowerCase().includes('default'))).toBeTruthy();
+    });
+
+    it('flags a description containing the poison word "usually"', () => {
+      const warnings = component.getDescriptionWarnings(
+        'They usually oppose recreational use.'
+      );
+      expect(warnings.some(w => w.toLowerCase().includes('usually'))).toBeTruthy();
+    });
+
+    it('flags a description containing the poison phrase "most likely"', () => {
+      const warnings = component.getDescriptionWarnings(
+        'Pick this when the comment is most likely about cannabis.'
+      );
+      expect(warnings.some(w => w.toLowerCase().includes('most likely'))).toBeTruthy();
+    });
+
+    it('does not flag a clean description', () => {
+      const warnings = component.getDescriptionWarnings(
+        'The commenter supports broad medical access for chronic conditions.'
+      );
+      expect(warnings.length).toBe(0);
+    });
+
+    it('matches poison words case-insensitively but only as whole words', () => {
+      // "Defaulted" should NOT match "default" — substring matching would over-trigger
+      const warnings = component.getDescriptionWarnings('They defaulted on payment.');
+      expect(warnings.length).toBe(0);
+    });
+
+    it('warns when categorized column has more than 5 options without examples', () => {
+      // Add 4 more options so we have 6 total
+      for (let i = 0; i < 4; i++) {
+        component.addOption();
+      }
+      expect(component.optionsArray.length).toBe(6);
+      expect(component.getCategoryStructureWarning()).toContain('5');
+    });
+
+    it('does not warn when categorized column has 5 or fewer options', () => {
+      // Default is 2 options — add 3 more for 5 total
+      for (let i = 0; i < 3; i++) {
+        component.addOption();
+      }
+      expect(component.optionsArray.length).toBe(5);
+      expect(component.getCategoryStructureWarning()).toBeNull();
+    });
+
+    it('renders the description warning in the UI when a poison word is typed', () => {
+      component.optionsArray.at(0).patchValue({
+        value: '6',
+        description: 'This is the default for legalize-it comments.'
+      });
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const warningEl = compiled.querySelector('.option-warning');
+      expect(warningEl).toBeTruthy();
+      expect(warningEl?.textContent?.toLowerCase()).toContain('default');
+    });
+
+    it('renders the structure warning in the UI when more than 5 options exist', () => {
+      for (let i = 0; i < 4; i++) {
+        component.addOption();
+      }
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const structureWarning = compiled.querySelector('.structure-warning');
+      expect(structureWarning).toBeTruthy();
+      expect(structureWarning?.textContent).toContain('5');
     });
   });
 

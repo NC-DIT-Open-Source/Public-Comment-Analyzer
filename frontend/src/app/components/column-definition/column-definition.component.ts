@@ -9,7 +9,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { AnalysisColumn, CategoryOption, ProcessingService } from '../../services/processing.service';
+import { AnalysisColumn, CategoryExample, CategoryOption, ProcessingService } from '../../services/processing.service';
 import { FileMetadata } from '../../services/file-upload.service';
 
 @Component({
@@ -51,7 +51,8 @@ export class ColumnDefinitionComponent implements OnInit {
     this.columnForm = this.fb.group({
       name: [''],
       instructions: [''],
-      options: this.fb.array([])
+      options: this.fb.array([]),
+      examples: this.fb.array([])
     });
 
     // Get file metadata from navigation state
@@ -87,6 +88,24 @@ export class ColumnDefinitionComponent implements OnInit {
 
   get optionsArray(): FormArray {
     return this.columnForm.get('options') as FormArray;
+  }
+
+  get examplesArray(): FormArray {
+    return this.columnForm.get('examples') as FormArray;
+  }
+
+  static readonly MAX_EXAMPLES = 5;
+
+  addExample(): void {
+    if (this.examplesArray.length >= ColumnDefinitionComponent.MAX_EXAMPLES) return;
+    this.examplesArray.push(this.fb.group({
+      commentText: [''],
+      label: ['']
+    }));
+  }
+
+  removeExample(index: number): void {
+    this.examplesArray.removeAt(index);
   }
 
   onColumnTypeChange(type: 'open_text' | 'categorized'): void {
@@ -166,6 +185,25 @@ export class ColumnDefinitionComponent implements OnInit {
         return;
       }
 
+      // Validate optional examples: drop fully-empty rows; reject partial rows.
+      const rawExamples = this.columnForm.value.examples || [];
+      const validOptionValues = new Set(options.map(o => o.value));
+      const examples: CategoryExample[] = [];
+      for (const ex of rawExamples) {
+        const commentText = (ex.commentText || '').trim();
+        const label = (ex.label || '').trim();
+        if (!commentText && !label) continue; // empty row, skip
+        if (!commentText || !label) {
+          this.errorMessage = 'Each example needs both comment text and a label, or leave both blank to remove it.';
+          return;
+        }
+        if (!validOptionValues.has(label)) {
+          this.errorMessage = `Example label "${label}" must match one of the option values.`;
+          return;
+        }
+        examples.push({ commentText, label });
+      }
+
       // Build instructions string from options for backend compatibility
       const instructions = options.map(o => `${o.value}: ${o.description}`).join('; ');
 
@@ -173,7 +211,8 @@ export class ColumnDefinitionComponent implements OnInit {
         name,
         instructions,
         type: 'categorized',
-        options
+        options,
+        ...(examples.length > 0 ? { examples } : {})
       };
 
       if (this.editingIndex !== null) {
@@ -195,15 +234,21 @@ export class ColumnDefinitionComponent implements OnInit {
     while (this.optionsArray.length > 0) {
       this.optionsArray.removeAt(0);
     }
+    while (this.examplesArray.length > 0) {
+      this.examplesArray.removeAt(0);
+    }
   }
 
   editColumn(index: number): void {
     const column = this.columns[index];
     this.columnType = column.type || 'open_text';
 
-    // Clear existing options
+    // Clear existing options + examples
     while (this.optionsArray.length > 0) {
       this.optionsArray.removeAt(0);
+    }
+    while (this.examplesArray.length > 0) {
+      this.examplesArray.removeAt(0);
     }
 
     if (this.columnType === 'categorized' && column.options) {
@@ -211,6 +256,12 @@ export class ColumnDefinitionComponent implements OnInit {
         this.optionsArray.push(this.fb.group({
           value: [opt.value],
           description: [opt.description]
+        }));
+      }
+      for (const ex of column.examples || []) {
+        this.examplesArray.push(this.fb.group({
+          commentText: [ex.commentText],
+          label: [ex.label]
         }));
       }
       this.columnForm.patchValue({ name: column.name, instructions: '' });
@@ -241,6 +292,31 @@ export class ColumnDefinitionComponent implements OnInit {
 
   get isEditing(): boolean {
     return this.editingIndex !== null;
+  }
+
+  // Words/phrases in option descriptions that bias the classifier (e.g., bucket 6's
+  // "This is the default for…" wording caused 67% of cannabis comments to land in 6).
+  // Matched as whole-word, case-insensitive.
+  private static readonly POISON_PATTERNS: Array<{label: string; regex: RegExp}> = [
+    { label: 'default', regex: /\bdefault\b/i },
+    { label: 'usually', regex: /\busually\b/i },
+    { label: 'most likely', regex: /\bmost likely\b/i },
+    { label: 'the answer', regex: /\bthe answer\b/i },
+    { label: 'obviously', regex: /\bobviously\b/i }
+  ];
+
+  getDescriptionWarnings(description: string): string[] {
+    if (!description) return [];
+    return ColumnDefinitionComponent.POISON_PATTERNS
+      .filter(p => p.regex.test(description))
+      .map(p => `Avoid the word "${p.label}" — it biases the AI toward this option when it's uncertain.`);
+  }
+
+  getCategoryStructureWarning(): string | null {
+    if (this.optionsArray.length > 5) {
+      return 'Categorized columns with more than 5 options are harder for the AI to distinguish reliably. Consider consolidating, or add 1-2 example comments per option.';
+    }
+    return null;
   }
 
   startProcessing(): void {

@@ -53,26 +53,72 @@
             <div formArrayName="options">
               <div *ngFor="let option of optionsArray.controls; let i = index"
                    [formGroupName]="i"
-                   class="option-row">
-                <mat-form-field appearance="outline" class="option-value">
-                  <mat-label>Option {{ i + 1 }}</mat-label>
-                  <input matInput formControlName="value" placeholder="e.g., Pro">
-                </mat-form-field>
-                <mat-form-field appearance="outline" class="option-description">
-                  <mat-label>When to choose this</mat-label>
-                  <input matInput formControlName="description" placeholder="e.g., If the comment supports the proposal">
-                </mat-form-field>
-                <button mat-icon-button type="button" (click)="removeOption(i)"
-                        [disabled]="optionsArray.length <= 2"
-                        aria-label="Remove option">
-                  <mat-icon>close</mat-icon>
-                </button>
+                   class="option-row-wrapper">
+                <div class="option-row">
+                  <mat-form-field appearance="outline" class="option-value">
+                    <mat-label>Option {{ i + 1 }}</mat-label>
+                    <input matInput formControlName="value" placeholder="e.g., Pro">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="option-description">
+                    <mat-label>When to choose this</mat-label>
+                    <input matInput formControlName="description" placeholder="e.g., If the comment supports the proposal">
+                  </mat-form-field>
+                  <button mat-icon-button type="button" (click)="removeOption(i)"
+                          [disabled]="optionsArray.length <= 2"
+                          aria-label="Remove option">
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </div>
+                <div class="option-warning"
+                     *ngFor="let warning of getDescriptionWarnings(option.get('description')?.value || '')"
+                     role="alert">
+                  <mat-icon class="warning-icon" aria-hidden="true">warning</mat-icon>
+                  <span>{{ warning }}</span>
+                </div>
               </div>
             </div>
             <button mat-stroked-button type="button" (click)="addOption()"
                     [disabled]="optionsArray.length >= 50"
                     class="add-option-btn">
               <mat-icon>add</mat-icon> Add Option
+            </button>
+            <div class="structure-warning" *ngIf="getCategoryStructureWarning() as structWarning" role="alert">
+              <mat-icon class="warning-icon" aria-hidden="true">warning</mat-icon>
+              <span>{{ structWarning }}</span>
+            </div>
+          </div>
+
+          <div class="examples-section">
+            <p class="options-hint">
+              Optional: add up to 5 example comments with the correct label. Few-shot examples are the single largest accuracy lever for nuanced taxonomies.
+            </p>
+            <div formArrayName="examples">
+              <div *ngFor="let example of examplesArray.controls; let ei = index"
+                   [formGroupName]="ei"
+                   class="example-row">
+                <mat-form-field appearance="outline" class="example-comment">
+                  <mat-label>Example comment</mat-label>
+                  <textarea matInput rows="2" formControlName="commentText"
+                            placeholder="A representative comment for this label"></textarea>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="example-label">
+                  <mat-label>Label</mat-label>
+                  <input matInput formControlName="label" [attr.list]="'example-labels-' + ei"
+                         placeholder="Option value">
+                </mat-form-field>
+                <datalist [attr.id]="'example-labels-' + ei">
+                  <option *ngFor="let opt of optionsArray.controls" [value]="opt.get('value')?.value"></option>
+                </datalist>
+                <button mat-icon-button type="button" (click)="removeExample(ei)"
+                        aria-label="Remove example">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+            </div>
+            <button mat-stroked-button type="button" (click)="addExample()"
+                    [disabled]="examplesArray.length >= 5"
+                    class="add-example-btn">
+              <mat-icon>add</mat-icon> Add Example
             </button>
           </div>
         </ng-container>

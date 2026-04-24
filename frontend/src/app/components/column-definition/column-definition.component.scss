@@ -60,6 +60,63 @@
     .add-option-btn {
       margin-top: $spacing-sm;
     }
+
+    .option-row-wrapper {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .option-warning,
+    .structure-warning {
+      display: flex;
+      align-items: flex-start;
+      gap: $spacing-xs;
+      padding: $spacing-xs $spacing-sm;
+      margin-top: $spacing-xs;
+      background-color: color.adjust(#b58105, $lightness: 55%);
+      border-left: 3px solid #b58105;
+      border-radius: $border-radius;
+      color: color.adjust(#b58105, $lightness: -10%);
+      font-size: $font-size-breadcrumb;
+      line-height: 1.4;
+
+      .warning-icon {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+    }
+
+    .structure-warning {
+      margin-top: $spacing-md;
+    }
+  }
+
+  .examples-section {
+    margin-top: $spacing-lg;
+    padding-top: $spacing-md;
+    border-top: 1px solid $color-gray;
+
+    .example-row {
+      display: flex;
+      align-items: flex-start;
+      gap: $spacing-sm;
+      margin-bottom: $spacing-xs;
+
+      .example-comment {
+        flex: 3;
+      }
+
+      .example-label {
+        flex: 1;
+      }
+    }
+
+    .add-example-btn {
+      margin-top: $spacing-sm;
+    }
   }
 
   .button-group {

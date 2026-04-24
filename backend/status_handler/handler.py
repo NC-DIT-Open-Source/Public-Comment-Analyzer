@@ -54,17 +54,24 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': {'code': 'JOB_NOT_FOUND', 'message': 'Job not found'}})
             }
         item = response['Item']
+        body = {
+            'jobId': item.get('jobId'),
+            'status': item.get('status'),
+            'progress': round((item.get('completedRows', 0) / item.get('totalRows', 1)) * 100, 2) if item.get('totalRows') else 0,
+            'completedRows': item.get('completedRows', 0),
+            'totalRows': item.get('totalRows', 0),
+            'errors': item.get('errors', [])
+        }
+        # Surface preview rows + the analysis column definitions so the frontend
+        # can render the preview table while gating on user confirmation.
+        if item.get('status') == 'preview_ready' and item.get('previewRows'):
+            body['previewRows'] = item['previewRows']
+            body['analysisColumns'] = item.get('analysisColumns', [])
+            body['selectedCommentColumn'] = item.get('selectedCommentColumn')
         return {
             'statusCode': 200,
             'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
-            'body': json.dumps({
-                'jobId': item.get('jobId'),
-                'status': item.get('status'),
-                'progress': round((item.get('completedRows', 0) / item.get('totalRows', 1)) * 100, 2) if item.get('totalRows') else 0,
-                'completedRows': item.get('completedRows', 0),
-                'totalRows': item.get('totalRows', 0),
-                'errors': item.get('errors', [])
-            }, default=decimal_default)
+            'body': json.dumps(body, default=decimal_default)
         }
     except Exception as e:
         logger.error(f"Status handler error: {str(e)}")

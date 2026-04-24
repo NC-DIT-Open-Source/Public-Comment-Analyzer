@@ -37,6 +37,21 @@ JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
 CONCURRENT_WORKERS = 500  # Process up to 500 rows concurrently
 CLAUDE_HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
+# Preview-step constants. The preview phase runs the model on the first N rows
+# of a categorized job so the user can sanity-check classifications before
+# committing the full run. Skipped for files smaller than the threshold (the
+# overhead isn't worth it) and for open-text-only runs (no rubric to validate).
+PREVIEW_ROW_COUNT = 20
+PREVIEW_MIN_FILE_SIZE = 50
+
+
+def _should_use_preview(analysis_columns: List[Dict[str, Any]], total_rows: int) -> bool:
+    """Decide whether to run a preview phase before processing the full file."""
+    if total_rows < PREVIEW_MIN_FILE_SIZE:
+        return False
+    has_categorized = any(col.get('type') == 'categorized' for col in analysis_columns)
+    return has_categorized
+
 
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment, falling back to '*'."""
@@ -102,10 +117,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if event.get('asyncProcessing'):
         return _process_async(event, context)
 
+    # API Gateway routes the preview-confirm path here too — detect via pathParameters.
+    # Validate the access key check applies to all API Gateway invocations.
+    path_params = event.get('pathParameters') or {}
+    if path_params.get('jobId'):
+        if not validate_access_key(event):
+            return build_unauthorized_response(_cors_origin())
+        return _handle_preview_confirm(event, context, path_params['jobId'])
+
     # Validate access key for API Gateway invocations
     if not validate_access_key(event):
         return build_unauthorized_response(_cors_origin())
-    
+
     # This is an API Gateway invocation - create job and return immediately
     try:
         # Parse request body
@@ -250,6 +273,69 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 }
                             })
                         }
+                # Optional few-shot examples: each must pair a comment with a label
+                # and the label must reference a defined option value.
+                examples = col.get('examples') or []
+                MAX_EXAMPLES_PER_COLUMN = 5
+                MAX_EXAMPLE_TEXT_LENGTH = 2000
+                if len(examples) > MAX_EXAMPLES_PER_COLUMN:
+                    return {
+                        'statusCode': 400,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': _cors_origin()
+                        },
+                        'body': json.dumps({
+                            'error': {
+                                'code': 'TOO_MANY_EXAMPLES',
+                                'message': f'Each categorized column may have at most {MAX_EXAMPLES_PER_COLUMN} examples'
+                            }
+                        })
+                    }
+                valid_option_values = {o['value'] for o in options}
+                for ex in examples:
+                    if not ex.get('commentText') or not ex.get('label'):
+                        return {
+                            'statusCode': 400,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': _cors_origin()
+                            },
+                            'body': json.dumps({
+                                'error': {
+                                    'code': 'INVALID_EXAMPLE',
+                                    'message': 'Each example must have both commentText and label'
+                                }
+                            })
+                        }
+                    if ex['label'] not in valid_option_values:
+                        return {
+                            'statusCode': 400,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': _cors_origin()
+                            },
+                            'body': json.dumps({
+                                'error': {
+                                    'code': 'INVALID_EXAMPLE',
+                                    'message': f"Example label '{ex['label']}' is not one of the column's option values"
+                                }
+                            })
+                        }
+                    if len(ex['commentText']) > MAX_EXAMPLE_TEXT_LENGTH:
+                        return {
+                            'statusCode': 400,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': _cors_origin()
+                            },
+                            'body': json.dumps({
+                                'error': {
+                                    'code': 'EXAMPLE_TEXT_TOO_LONG',
+                                    'message': f'Example commentText must be {MAX_EXAMPLE_TEXT_LENGTH} characters or fewer'
+                                }
+                            })
+                        }
             else:
                 if not col.get('instructions'):
                     return {
@@ -352,11 +438,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             lambda_client = boto3.client('lambda', endpoint_url=local_endpoint, use_ssl=False)
         else:
             lambda_client = boto3.client('lambda')
+        phase = 'preview' if _should_use_preview(analysis_columns, row_count) else 'full'
         lambda_client.invoke(
             FunctionName=context.function_name,
             InvocationType='Event',  # Async invocation
             Payload=json.dumps({
                 'asyncProcessing': True,
+                'phase': phase,
                 'jobId': job_id,
                 'fileId': file_id,
                 'fileType': file_type,
@@ -448,6 +536,94 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 
+def _handle_preview_confirm(event: Dict[str, Any], context: Any, job_id: str) -> Dict[str, Any]:
+    """Handle POST /process/{jobId}/preview-confirm: validate state, then async-invoke
+    the row processor to run the full file."""
+    headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': _cors_origin()
+    }
+
+    try:
+        uuid.UUID(job_id, version=4)
+    except ValueError:
+        return {
+            'statusCode': 400,
+            'headers': headers,
+            'body': json.dumps({'error': {
+                'code': 'INVALID_FILE_ID',
+                'message': 'jobId must be a valid UUID'
+            }})
+        }
+
+    try:
+        table = _get_dynamodb().Table(JOBS_TABLE_NAME)
+        result = table.get_item(Key={'jobId': job_id})
+        item = result.get('Item')
+    except ClientError as e:
+        logger.error(f"DynamoDB error fetching job {job_id}: {e}")
+        return {
+            'statusCode': 500,
+            'headers': headers,
+            'body': json.dumps({'error': {'code': 'AWS_ERROR',
+                                          'message': 'Failed to retrieve job state.'}})
+        }
+
+    if not item:
+        return {
+            'statusCode': 404,
+            'headers': headers,
+            'body': json.dumps({'error': {'code': 'JOB_NOT_FOUND',
+                                          'message': 'Job not found.'}})
+        }
+
+    if item.get('status') != 'preview_ready':
+        return {
+            'statusCode': 409,
+            'headers': headers,
+            'body': json.dumps({'error': {
+                'code': 'INVALID_JOB_STATE',
+                'message': f"Job is in state '{item.get('status')}', expected 'preview_ready'."
+            }})
+        }
+
+    # Re-derive the file type from the stored input key (e.g. uploads/<id>/input.csv)
+    input_key = item['inputFileKey']
+    file_type = input_key.rsplit('.', 1)[-1] if '.' in input_key else 'csv'
+
+    payload = {
+        'asyncProcessing': True,
+        'phase': 'confirm',
+        'jobId': job_id,
+        'fileId': item['fileId'],
+        'fileType': file_type,
+        'selectedCommentColumn': item.get('selectedCommentColumn'),
+        'contextDescription': item.get('contextDescription'),
+        'analysisColumns': item['analysisColumns'],
+        'inputKey': input_key,
+        'outputKey': item['outputFileKey']
+    }
+
+    local_endpoint = os.environ.get('LOCAL_LAMBDA_ENDPOINT')
+    if not local_endpoint and os.environ.get('AWS_SAM_LOCAL') == 'true':
+        local_endpoint = 'http://host.docker.internal:3001'
+    if local_endpoint:
+        lambda_client = boto3.client('lambda', endpoint_url=local_endpoint, use_ssl=False)
+    else:
+        lambda_client = boto3.client('lambda')
+    lambda_client.invoke(
+        FunctionName=context.function_name,
+        InvocationType='Event',
+        Payload=json.dumps(payload)
+    )
+
+    return {
+        'statusCode': 200,
+        'headers': headers,
+        'body': json.dumps({'jobId': job_id, 'status': 'processing'})
+    }
+
+
 def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Perform actual async processing of the file.
@@ -467,23 +643,26 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     analysis_columns = event['analysisColumns']
     input_key = event['inputKey']
     output_key = event['outputKey']
-    
+    phase = event.get('phase', 'full')
+
     try:
-        logger.info(f"Starting async processing for job {job_id}")
-        
-        # Update status to processing
-        _update_job_status(job_id, 'processing', 0, 0)
-        
+        logger.info(f"Starting async processing for job {job_id} (phase={phase})")
+
+        # Update status. Preview phase has its own status so the frontend can poll
+        # and surface the gating UI; full/confirm collapse into the same flow.
+        in_progress_status = 'preview_processing' if phase == 'preview' else 'processing'
+        _update_job_status(job_id, in_progress_status, 0, 0)
+
         # Download input file from S3
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_type}') as tmp_input:
             input_path = tmp_input.name
             _get_s3_client().download_file(DATA_BUCKET, input_key, input_path)
-        
+
         # Parse input file
         parser = FileParser()
         parsed_file = parser.parse(input_path, file_type)
-        
-        logger.info(f"Processing {parsed_file.row_count} rows")
+
+        logger.info(f"Processing {parsed_file.row_count} rows (phase={phase})")
 
         # Validate selected_comment_column exists in file headers (case-insensitive)
         if selected_comment_column:
@@ -494,35 +673,53 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     f"file headers {parsed_file.headers}. Will fall back to all columns per row."
                 )
 
-        # Process rows with Bedrock
+        if phase == 'preview':
+            # Slice the parsed file to the first N rows. Reuse the rest of the pipeline.
+            preview_size = min(PREVIEW_ROW_COUNT, parsed_file.row_count)
+            parsed_file.rows = parsed_file.rows[:preview_size]
+            parsed_file.row_count = preview_size
+
+            preview_rows = _process_rows(job_id, parsed_file, analysis_columns,
+                                         selected_comment_column, context_description)
+
+            # Persist preview results to DynamoDB and flip status to preview_ready.
+            # The user will hit POST /process/{jobId}/preview-confirm to continue.
+            _store_preview_rows(job_id, preview_rows, preview_size)
+            _update_job_status(job_id, 'preview_ready', preview_size, preview_size)
+
+            os.unlink(input_path)
+            logger.info(f"Preview completed for job {job_id} ({preview_size} rows)")
+            return {'statusCode': 200, 'body': 'Preview completed'}
+
+        # Full / confirm phase: process all rows
         processed_rows = _process_rows(job_id, parsed_file, analysis_columns,
                                        selected_comment_column, context_description)
-        
+
         # Write output file with error column
         output_headers = parsed_file.headers + [col['name'] for col in analysis_columns] + ['_error']
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_type}') as tmp_output:
             output_path = tmp_output.name
             writer = FileWriter()
             writer.write(output_headers, processed_rows, output_path, file_type)
-        
+
         # Upload output file to S3
         _get_s3_client().upload_file(output_path, DATA_BUCKET, output_key)
-        
+
         # Update job status to completed with result file key
-        _update_job_status(job_id, 'completed', parsed_file.row_count, parsed_file.row_count, 
+        _update_job_status(job_id, 'completed', parsed_file.row_count, parsed_file.row_count,
                           result_file_key=output_key)
-        
+
         # Clean up temp files
         os.unlink(input_path)
         os.unlink(output_path)
-        
+
         # Trigger aggregate analysis asynchronously so results are pre-computed
         _trigger_aggregate_analysis(job_id)
-        
+
         logger.info(f"Async processing completed for job {job_id}")
-        
+
         return {'statusCode': 200, 'body': 'Processing completed'}
-        
+
     except Exception as e:
         error_message = str(e)
         logger.error(f"Async processing failed for job {job_id}: {error_message}")
@@ -641,7 +838,37 @@ def _get_row_count(s3_key: str, file_type: str) -> int:
         return 0  # Return 0 if we can't determine
 
 
-def _update_job_status(job_id: str, status: str, completed_rows: int, 
+def _store_preview_rows(job_id: str, preview_rows: List[Dict[str, Any]], total_previewed: int) -> None:
+    """Persist preview-phase row results to the job record.
+
+    DynamoDB items are capped at 400 KB; with 20 rows of typical comment data
+    (a few hundred chars of comment + a handful of analysis columns) we land far
+    under that. If a single comment ever exceeds ~15 KB we truncate to keep the
+    item under the limit — the user only needs enough to validate classifications.
+    """
+    MAX_COMMENT_PREVIEW_LEN = 2000
+    sanitized: List[Dict[str, Any]] = []
+    for row in preview_rows:
+        sanitized_row: Dict[str, Any] = {}
+        for k, v in row.items():
+            value = '' if v is None else str(v)
+            if len(value) > MAX_COMMENT_PREVIEW_LEN:
+                value = value[:MAX_COMMENT_PREVIEW_LEN] + '…'
+            sanitized_row[k] = value
+        sanitized.append(sanitized_row)
+
+    table = _get_dynamodb().Table(JOBS_TABLE_NAME)
+    table.update_item(
+        Key={'jobId': job_id},
+        UpdateExpression="SET previewRows = :rows, previewedAt = :ts",
+        ExpressionAttributeValues={
+            ':rows': sanitized,
+            ':ts': datetime.now(timezone.utc).isoformat()
+        }
+    )
+
+
+def _update_job_status(job_id: str, status: str, completed_rows: int,
                       total_rows: int, errors: List[Dict[str, Any]] = None,
                       result_file_key: str = None) -> None:
     """
@@ -876,6 +1103,7 @@ def _process_single_row(row: Dict[str, str],
     # Build per-column instructions, differentiating open_text vs categorized
     analysis_instructions_parts = []
     categorized_columns = {}  # col_name -> list of valid option values
+    examples_blocks = []      # rendered <examples> blocks for each column that has them
     for col in analysis_columns:
         col_type = col.get('type', 'open_text')
         if col_type == 'categorized' and col.get('options'):
@@ -888,12 +1116,23 @@ def _process_single_row(row: Dict[str, str],
                 f"- {col['name']}: You MUST respond with EXACTLY one of the following values (no other text):\n{options_text}"
             )
             categorized_columns[col['name']] = [opt['value'] for opt in options]
+
+            col_examples = col.get('examples') or []
+            if col_examples:
+                rendered = "\n".join([
+                    f'  <example>\n    <comment>{_sanitize_for_prompt(str(ex["commentText"]))}</comment>\n    <{col["name"]}>{ex["label"]}</{col["name"]}>\n  </example>'
+                    for ex in col_examples
+                ])
+                examples_blocks.append(
+                    f'For column "{col["name"]}", here are correctly-classified examples:\n<examples>\n{rendered}\n</examples>'
+                )
         else:
             analysis_instructions_parts.append(
                 f"- {col['name']}: {col['instructions']}"
             )
-    
+
     analysis_instructions = "\n".join(analysis_instructions_parts)
+    examples_section = ("\n\n" + "\n\n".join(examples_blocks)) if examples_blocks else ""
     
     # Construct prompt with injection-resistant framing
     sanitized_context = _sanitize_for_prompt(context_description) if context_description else None
@@ -901,7 +1140,7 @@ def _process_single_row(row: Dict[str, str],
     if sanitized_context:
         prompt_preamble += f"\n\n<context_description>{sanitized_context}</context_description>"
 
-    prompt = f"""{prompt_preamble}
+    prompt = f"""{prompt_preamble}{examples_section}
 
 <comment_data>
 {comment_text}
@@ -912,26 +1151,33 @@ Please provide the following analysis:
 
 Respond in JSON format with keys matching the column names exactly. Only include the JSON object, no other text."""
     
-    # Call Bedrock with retry logic
+    # Call Bedrock with retry logic.
+    # When any categorized column is present we pin temperature=0 so that classifications
+    # are deterministic across re-runs — open-text-only runs keep Bedrock's default to
+    # preserve summary variety.
+    request_body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 500,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+    if categorized_columns:
+        request_body["temperature"] = 0
+
     max_retries = 3
     last_error = None
-    
+
     for attempt in range(max_retries):
         try:
             response = _get_bedrock_runtime().invoke_model(
                 modelId=CLAUDE_HAIKU_MODEL_ID,
                 contentType="application/json",
                 accept="application/json",
-                body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 500,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
-                })
+                body=json.dumps(request_body)
             )
             
             # Parse response
@@ -1129,6 +1375,7 @@ Respond with ONLY the chosen value, no JSON, no quotes, no explanation. Just the
                     body=json.dumps({
                         "anthropic_version": "bedrock-2023-05-31",
                         "max_tokens": 50,
+                        "temperature": 0,
                         "messages": [
                             {"role": "user", "content": retry_prompt}
                         ]
