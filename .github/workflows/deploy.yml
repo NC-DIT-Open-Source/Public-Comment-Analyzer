@@ -252,6 +252,12 @@ jobs:
           pip install -r requirements.txt
           python -m pytest -v || true
 
+      - name: Test status_handler
+        working-directory: backend/status_handler
+        run: |
+          pip install boto3
+          python -m pytest -v
+
   test-frontend:
     name: Test Frontend
     runs-on: ubuntu-latest
