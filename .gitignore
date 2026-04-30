@@ -93,3 +93,6 @@ samconfig.toml
 # Playwright MCP artifacts
 .playwright-mcp/
 e2e-*.png
+
+# Eval harness outputs (raw downloads + reports per iteration)
+scripts/eval_results/

@@ -94,7 +94,7 @@ export class ColumnDefinitionComponent implements OnInit {
     return this.columnForm.get('examples') as FormArray;
   }
 
-  static readonly MAX_EXAMPLES = 5;
+  static readonly MAX_EXAMPLES = 14;
 
   addExample(): void {
     if (this.examplesArray.length >= ColumnDefinitionComponent.MAX_EXAMPLES) return;
