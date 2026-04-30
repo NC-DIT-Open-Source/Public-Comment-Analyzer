@@ -355,7 +355,7 @@ class TestRowProcessorHandler(unittest.TestCase):
         self.assertEqual(body['error']['code'], 'INVALID_EXAMPLE')
 
     def test_too_many_examples_returns_400(self):
-        """More than 5 examples per column is rejected."""
+        """More than 14 examples per column is rejected."""
         event = {
             'body': json.dumps({
                 'fileId': str(uuid.uuid4()),
@@ -369,7 +369,7 @@ class TestRowProcessorHandler(unittest.TestCase):
                         {'value': 'Oppose', 'description': 'Against'}
                     ],
                     'examples': [
-                        {'commentText': f'Example {i}', 'label': 'Support'} for i in range(6)
+                        {'commentText': f'Example {i}', 'label': 'Support'} for i in range(15)
                     ]
                 }]
             })
