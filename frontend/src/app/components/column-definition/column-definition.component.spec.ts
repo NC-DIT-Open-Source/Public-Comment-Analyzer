@@ -223,11 +223,11 @@ describe('ColumnDefinitionComponent', () => {
       expect(component.examplesArray.length).toBe(1);
     });
 
-    it('caps examples at 5 per column', () => {
-      for (let i = 0; i < 10; i++) {
+    it('caps examples at 14 per column', () => {
+      for (let i = 0; i < 20; i++) {
         component.addExample();
       }
-      expect(component.examplesArray.length).toBe(5);
+      expect(component.examplesArray.length).toBe(14);
     });
 
     it('persists examples on the saved categorized column', () => {
