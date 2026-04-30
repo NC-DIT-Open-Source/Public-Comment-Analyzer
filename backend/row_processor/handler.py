@@ -276,7 +276,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Optional few-shot examples: each must pair a comment with a label
                 # and the label must reference a defined option value.
                 examples = col.get('examples') or []
-                MAX_EXAMPLES_PER_COLUMN = 5
+                MAX_EXAMPLES_PER_COLUMN = 14
                 MAX_EXAMPLE_TEXT_LENGTH = 2000
                 if len(examples) > MAX_EXAMPLES_PER_COLUMN:
                     return {
