@@ -200,7 +200,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
         if (response.aggregateAnalysis) {
           const result = marked.parse(response.aggregateAnalysis);
           Promise.resolve(result).then((html: string) => {
-            this.renderedAnalysis = this.sanitizer.bypassSecurityTrustHtml(html);
+            this.renderedAnalysis = this.sanitizer.sanitize(1, html) || '';
             this.isLoadingResults = false;
             this.analysisRetryCount = 0;
             this.currentStep = 3; // Now truly complete
@@ -287,7 +287,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
         if (this.dashboardRawNarrative) {
           const result = marked.parse(this.dashboardRawNarrative);
           Promise.resolve(result).then((html: string) => {
-            this.dashboardNarrative = this.sanitizer.bypassSecurityTrustHtml(html);
+            this.dashboardNarrative = this.sanitizer.sanitize(1, html) || '';
             parseAndRender();
           });
         } else {
