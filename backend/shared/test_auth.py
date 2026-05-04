@@ -1,9 +1,14 @@
 """Tests for the shared access-key validator."""
 
-import hashlib
 import importlib
 
+import bcrypt
 import pytest
+
+
+def _bcrypt(pw: str) -> str:
+    """Hash with bcrypt rounds=4 — fast for tests, never use this work factor in prod."""
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=4)).decode("utf-8")
 
 
 @pytest.fixture
@@ -27,17 +32,17 @@ def test_fails_closed_when_no_secret_and_no_local_hash(auth):
 
 
 def test_rejects_when_header_missing(auth, monkeypatch):
-    monkeypatch.setenv("LOCAL_PASSWORD_HASH", hashlib.sha256(b"pw").hexdigest())
+    monkeypatch.setenv("LOCAL_PASSWORD_HASH", _bcrypt("pw"))
     assert auth.validate_access_key(_event(None)) is False
 
 
 def test_local_hash_path_accepts_correct_password(auth, monkeypatch):
-    monkeypatch.setenv("LOCAL_PASSWORD_HASH", hashlib.sha256(b"correct-horse").hexdigest())
+    monkeypatch.setenv("LOCAL_PASSWORD_HASH", _bcrypt("correct-horse"))
     assert auth.validate_access_key(_event("correct-horse")) is True
 
 
 def test_local_hash_path_rejects_wrong_password(auth, monkeypatch):
-    monkeypatch.setenv("LOCAL_PASSWORD_HASH", hashlib.sha256(b"correct-horse").hexdigest())
+    monkeypatch.setenv("LOCAL_PASSWORD_HASH", _bcrypt("correct-horse"))
     assert auth.validate_access_key(_event("wrong-password")) is False
 
 
@@ -48,15 +53,22 @@ def test_secrets_manager_path_returns_false_when_secret_empty(auth, monkeypatch)
     assert auth.validate_access_key(_event("anything")) is False
 
 
-def test_uses_constant_time_compare(auth, monkeypatch):
-    """Sanity: hmac.compare_digest must be the comparator (not ==)."""
-    monkeypatch.setenv("LOCAL_PASSWORD_HASH", hashlib.sha256(b"pw").hexdigest())
-    called = {"compare_digest": False}
+def test_malformed_hash_fails_closed(auth, monkeypatch):
+    """A garbage stored hash must not throw or pass — return False."""
+    monkeypatch.setenv("LOCAL_PASSWORD_HASH", "not-a-bcrypt-hash")
+    assert auth.validate_access_key(_event("anything")) is False
 
-    def fake_compare(a, b):
-        called["compare_digest"] = True
-        return a == b
 
-    monkeypatch.setattr(auth.hmac, "compare_digest", fake_compare)
+def test_uses_bcrypt_checkpw(auth, monkeypatch):
+    """Sanity: bcrypt.checkpw must be the comparator (not == or hashlib)."""
+    monkeypatch.setenv("LOCAL_PASSWORD_HASH", _bcrypt("pw"))
+    called = {"checkpw": False}
+    real_checkpw = auth.bcrypt.checkpw
+
+    def fake_checkpw(pw_bytes, hash_bytes):
+        called["checkpw"] = True
+        return real_checkpw(pw_bytes, hash_bytes)
+
+    monkeypatch.setattr(auth.bcrypt, "checkpw", fake_checkpw)
     auth.validate_access_key(_event("pw"))
-    assert called["compare_digest"], "validate_access_key must use hmac.compare_digest"
+    assert called["checkpw"], "validate_access_key must use bcrypt.checkpw"
