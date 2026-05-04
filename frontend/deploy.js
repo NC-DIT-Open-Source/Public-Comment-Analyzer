@@ -13,7 +13,7 @@
  *   npm run deploy:dry-run      # Show what would be deployed without actually deploying
  */
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -67,7 +67,7 @@ function extractDistributionId(cloudFrontUrl) {
 // Check if AWS CLI is available
 function checkAwsCli() {
   try {
-    execSync('aws --version', { stdio: 'ignore' });
+    execFileSync('aws', ['--version'], { stdio: 'ignore' });
     return true;
   } catch (error) {
     console.error('❌ Error: AWS CLI is not installed or not in PATH');
@@ -87,17 +87,17 @@ function syncToS3(bucketName) {
   }
   
   console.log(`📦 Syncing files to S3 bucket: ${bucketName}`);
-  
+
   const awsProfile = process.env.AWS_PROFILE || 'default';
-  const syncCommand = `aws s3 sync ${distPath} s3://${bucketName}/ --delete --profile ${awsProfile}`;
-  
+  const syncArgs = ['s3', 'sync', distPath, `s3://${bucketName}/`, '--delete', '--profile', awsProfile];
+
   if (isDryRun) {
-    console.log(`   [DRY RUN] Would execute: ${syncCommand}`);
+    console.log(`   [DRY RUN] Would execute: aws ${syncArgs.join(' ')}`);
     return;
   }
-  
+
   try {
-    execSync(syncCommand, { stdio: 'inherit' });
+    execFileSync('aws', syncArgs, { stdio: 'inherit' });
     console.log('✅ Files synced successfully');
   } catch (error) {
     console.error('❌ Error syncing files to S3:', error.message);
@@ -108,22 +108,34 @@ function syncToS3(bucketName) {
 // Set cache control headers for static assets
 function setCacheHeaders(bucketName) {
   console.log('⚙️  Setting cache control headers...');
-  
-  // Set long cache for hashed files (JS, CSS with hashes)
-  const longCacheCommand = `aws s3 cp s3://${bucketName}/ s3://${bucketName}/ --recursive --exclude "*" --include "*.js" --include "*.css" --cache-control "public, max-age=31536000, immutable" --metadata-directive REPLACE`;
-  
-  // Set short cache for index.html
-  const shortCacheCommand = `aws s3 cp s3://${bucketName}/index.html s3://${bucketName}/index.html --cache-control "public, max-age=0, must-revalidate" --metadata-directive REPLACE`;
-  
+
+  const longCacheArgs = [
+    's3', 'cp',
+    `s3://${bucketName}/`, `s3://${bucketName}/`,
+    '--recursive',
+    '--exclude', '*',
+    '--include', '*.js',
+    '--include', '*.css',
+    '--cache-control', 'public, max-age=31536000, immutable',
+    '--metadata-directive', 'REPLACE',
+  ];
+
+  const shortCacheArgs = [
+    's3', 'cp',
+    `s3://${bucketName}/index.html`, `s3://${bucketName}/index.html`,
+    '--cache-control', 'public, max-age=0, must-revalidate',
+    '--metadata-directive', 'REPLACE',
+  ];
+
   if (isDryRun) {
     console.log(`   [DRY RUN] Would set long cache for JS/CSS files`);
     console.log(`   [DRY RUN] Would set short cache for index.html`);
     return;
   }
-  
+
   try {
-    execSync(longCacheCommand, { stdio: 'ignore' });
-    execSync(shortCacheCommand, { stdio: 'ignore' });
+    execFileSync('aws', longCacheArgs, { stdio: 'ignore' });
+    execFileSync('aws', shortCacheArgs, { stdio: 'ignore' });
     console.log('✅ Cache headers set successfully');
   } catch (error) {
     console.warn('⚠️  Warning: Could not set cache headers:', error.message);
@@ -139,17 +151,22 @@ function invalidateCloudFront(distributionId) {
   }
   
   console.log(`🔄 Invalidating CloudFront cache for distribution: ${distributionId}`);
-  
+
   const awsProfile = process.env.AWS_PROFILE || 'default';
-  const invalidateCommand = `aws cloudfront create-invalidation --distribution-id ${distributionId} --paths "/*" --profile ${awsProfile}`;
-  
+  const invalidateArgs = [
+    'cloudfront', 'create-invalidation',
+    '--distribution-id', distributionId,
+    '--paths', '/*',
+    '--profile', awsProfile,
+  ];
+
   if (isDryRun) {
-    console.log(`   [DRY RUN] Would execute: ${invalidateCommand}`);
+    console.log(`   [DRY RUN] Would execute: aws ${invalidateArgs.join(' ')}`);
     return;
   }
-  
+
   try {
-    execSync(invalidateCommand, { stdio: 'inherit' });
+    execFileSync('aws', invalidateArgs, { stdio: 'inherit' });
     console.log('✅ CloudFront cache invalidation initiated');
   } catch (error) {
     console.error('❌ Error invalidating CloudFront cache:', error.message);
