@@ -16,18 +16,18 @@ export class AuthService {
   constructor(private http: HttpClient) {}
 
   hasStoredKey(): boolean {
-    return !!localStorage.getItem(ACCESS_KEY_STORAGE_KEY);
+    return !!sessionStorage.getItem(ACCESS_KEY_STORAGE_KEY);
   }
 
   getAccessKey(): string {
-    return localStorage.getItem(ACCESS_KEY_STORAGE_KEY) || '';
+    return sessionStorage.getItem(ACCESS_KEY_STORAGE_KEY) || '';
   }
 
   validate(password: string): Observable<boolean> {
     return this.http.post<{ valid: boolean }>(`${environment.apiBaseUrl}/auth/validate`, { password }).pipe(
       map(res => {
         if (res.valid) {
-          localStorage.setItem(ACCESS_KEY_STORAGE_KEY, password);
+          sessionStorage.setItem(ACCESS_KEY_STORAGE_KEY, password);
           this.authenticatedSubject.next(true);
         }
         return res.valid;
@@ -37,7 +37,7 @@ export class AuthService {
   }
 
   logout(): void {
-    localStorage.removeItem(ACCESS_KEY_STORAGE_KEY);
+    sessionStorage.removeItem(ACCESS_KEY_STORAGE_KEY);
     this.authenticatedSubject.next(false);
   }
 }
