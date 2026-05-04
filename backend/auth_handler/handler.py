@@ -2,6 +2,7 @@
 
 import json
 import os
+import hmac
 import hashlib
 import boto3
 import logging
@@ -61,7 +62,7 @@ def lambda_handler(event, context):
         stored_hash = _get_password_hash()
         if not stored_hash:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Auth not configured'})}
-        if input_hash == stored_hash:
+        if hmac.compare_digest(input_hash, stored_hash):
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'valid': True})}
         else:
             return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Invalid password'})}
