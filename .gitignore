@@ -55,6 +55,8 @@ backend/*/bin/
 cdk.out/
 .cdk.staging/
 cdk.context.json
+infrastructure/cdk-outputs.json
+infrastructure/outputs.json
 
 # Node
 node_modules/
@@ -96,3 +98,6 @@ e2e-*.png
 
 # Eval harness outputs (raw downloads + reports per iteration)
 scripts/eval_results/
+
+# Kiro internal spec tooling (project-private)
+.kiro/

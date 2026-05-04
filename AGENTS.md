@@ -50,7 +50,7 @@ Upload → S3 → DynamoDB (job created) → Row Processor (concurrent)
 
 ### CORS Configuration
 - **Development**: `allowed_origin=*` (default)
-- **Production**: `allowed_origin=https://commentreviewer.oaip.nc.gov`
+- **Production**: `allowed_origin=https://your-domain.example.com`
 - Set via CDK context: `cdk deploy -c allowed_origin=https://...`
 - All Lambda handlers use `ALLOWED_ORIGIN` environment variable
 
@@ -124,7 +124,7 @@ aws logs tail /aws/lambda/PublicCommentAnalyzer-RowProcessor-dev --follow --prof
 ### Invalidate CloudFront Cache
 ```bash
 aws cloudfront create-invalidation \
-  --distribution-id E3C3HXNESHQKVB \
+  --distribution-id "$CLOUDFRONT_DIST_ID" \
   --paths "/*" \
   --profile $AWS_PROFILE
 ```
@@ -160,7 +160,7 @@ json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', content, re.DOTALL)
 **Fix**: Redeploy infrastructure with correct `allowed_origin`:
 ```bash
 cd infrastructure
-cdk deploy -c allowed_origin=https://commentreviewer.oaip.nc.gov --profile $AWS_PROFILE
+cdk deploy -c allowed_origin=https://your-domain.example.com --profile $AWS_PROFILE
 ```
 
 ## File Organization
@@ -261,11 +261,11 @@ aws dynamodb get-item \
 
 ### Check S3 Files
 ```bash
-# List uploads
-aws s3 ls s3://public-comment-analyzer-data-dev-267527030320/uploads/ --profile $AWS_PROFILE
+# List uploads (DATA_BUCKET is in your CloudFormation outputs)
+aws s3 ls "s3://$DATA_BUCKET/uploads/" --profile $AWS_PROFILE
 
 # List results
-aws s3 ls s3://public-comment-analyzer-data-dev-267527030320/results/ --profile $AWS_PROFILE
+aws s3 ls "s3://$DATA_BUCKET/results/" --profile $AWS_PROFILE
 ```
 
 ### Test API Directly
@@ -320,7 +320,7 @@ This is used by all deployment scripts and AWS CLI commands.
 - `DATA_BUCKET`: S3 bucket for uploads/results
 - `JOBS_TABLE`: DynamoDB table name
 - `ENVIRONMENT`: dev/prod
-- `ALLOWED_ORIGIN`: CORS origin (e.g., https://commentreviewer.oaip.nc.gov)
+- `ALLOWED_ORIGIN`: CORS origin (e.g., https://your-domain.example.com)
 - `IAM_POLICY_VERSION`: Forces credential refresh when incremented
 
 ### Frontend (environment.ts)
@@ -361,7 +361,7 @@ aws cloudformation describe-stacks \
 aws lambda list-functions --profile $AWS_PROFILE | grep PublicCommentAnalyzer
 
 # Get CloudFront distribution
-aws cloudfront get-distribution --id E3C3HXNESHQKVB --profile $AWS_PROFILE
+aws cloudfront get-distribution --id "$CLOUDFRONT_DIST_ID" --profile $AWS_PROFILE
 
 # Tail multiple logs
 aws logs tail /aws/lambda/PublicCommentAnalyzer-RowProcessor-dev \
