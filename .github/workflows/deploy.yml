@@ -109,14 +109,16 @@ jobs:
 
       - name: Deploy CDK stack
         working-directory: infrastructure
+        env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          CERTIFICATE_ARN: ${{ secrets.CERTIFICATE_ARN }}
+          ALLOWED_ORIGIN: ${{ secrets.ALLOWED_ORIGIN }}
         run: |
-          cdk deploy \
-            --context environment=${{ env.ENVIRONMENT }} \
-            --context domain_name=commentreviewer.oaip.nc.gov \
-            --context certificate_arn=arn:aws:acm:us-east-1:AWS_ACCOUNT_ID:certificate/CERT_UUID \
-            --context allowed_origin=https://commentreviewer.oaip.nc.gov \
-            --require-approval never \
-            --outputs-file outputs.json
+          ctx_args=(--context environment=${{ env.ENVIRONMENT }})
+          [ -n "$DOMAIN_NAME" ]     && ctx_args+=(--context "domain_name=$DOMAIN_NAME")
+          [ -n "$CERTIFICATE_ARN" ] && ctx_args+=(--context "certificate_arn=$CERTIFICATE_ARN")
+          [ -n "$ALLOWED_ORIGIN" ]  && ctx_args+=(--context "allowed_origin=$ALLOWED_ORIGIN")
+          cdk deploy "${ctx_args[@]}" --require-approval never --outputs-file outputs.json
 
       - name: Get stack outputs
         id: get-outputs
