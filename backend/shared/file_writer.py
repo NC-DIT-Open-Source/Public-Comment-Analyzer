@@ -8,6 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Spreadsheet apps interpret cells starting with these as formulas.
+# AI-generated content is untrusted, so neutralize by prefixing with a single quote.
+_FORMULA_TRIGGERS = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _escape_formula(value):
+    """Prefix cell values that look like formulas with ' to prevent execution."""
+    if isinstance(value, str) and value and value[0] in _FORMULA_TRIGGERS:
+        return "'" + value
+    return value
+
 
 class FileWriter:
     """Writer for CSV and XLSX files."""
@@ -54,7 +65,7 @@ class FileWriter:
                 
                 for row_num, row in enumerate(rows, start=2):  # Start at 2 (after header)
                     try:
-                        writer.writerow(row)
+                        writer.writerow({k: _escape_formula(v) for k, v in row.items()})
                     except Exception as e:
                         logger.warning(f"Error writing CSV row {row_num}: {str(e)}")
                         # Continue with other rows
@@ -95,7 +106,7 @@ class FileWriter:
                 try:
                     # Extract values in the same order as headers
                     # Keep empty strings as empty strings (they'll be stored as empty cells)
-                    row_values = [row.get(header, '') for header in headers]
+                    row_values = [_escape_formula(row.get(header, '')) for header in headers]
                     worksheet.append(row_values)
                 except Exception as e:
                     logger.warning(f"Error writing XLSX row {row_num}: {str(e)}")
