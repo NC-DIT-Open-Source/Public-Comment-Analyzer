@@ -2,8 +2,7 @@
 
 import os
 import json
-import hmac
-import hashlib
+import bcrypt
 import boto3
 from botocore.exceptions import ClientError
 import logging
@@ -23,7 +22,10 @@ def _get_secrets_client():
 
 
 def _get_password_hash() -> str:
-    """Retrieve the access password hash from Secrets Manager (cached per Lambda instance)."""
+    """Retrieve the access password hash from Secrets Manager (cached per Lambda instance).
+
+    The stored value is a bcrypt hash string (e.g. "$2b$12$...").
+    """
     global _cached_password_hash
     if _cached_password_hash is not None:
         return _cached_password_hash
@@ -42,14 +44,20 @@ def _get_password_hash() -> str:
         return ''
 
 
-def _hash_password(password: str) -> str:
-    """Hash a password with SHA-256."""
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+def _verify_password(password: str, stored_hash: str) -> bool:
+    """Constant-time bcrypt verification. Returns False on any malformed input."""
+    if not password or not stored_hash:
+        return False
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
+    except (ValueError, TypeError):
+        # Hash isn't a valid bcrypt string — fail closed.
+        return False
 
 
 def validate_access_key(event: dict) -> bool:
     """
-    Validate the X-Access-Key header against the stored password hash.
+    Validate the X-Access-Key header against the stored bcrypt password hash.
 
     Returns True if valid, False otherwise. Fails closed: if no secret is
     configured and no LOCAL_PASSWORD_HASH is set, all requests are rejected.
@@ -60,21 +68,17 @@ def validate_access_key(event: dict) -> bool:
     if not access_key:
         return False
 
-    # Local-dev path: hash is provided directly via env var.
+    # Local-dev path: a bcrypt hash is provided directly via env var.
     local_hash = os.environ.get('LOCAL_PASSWORD_HASH', '')
     if local_hash:
-        return hmac.compare_digest(_hash_password(access_key), local_hash)
+        return _verify_password(access_key, local_hash)
 
     secret_name = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
     if not secret_name:
         logger.warning("Auth not configured: no ACCESS_PASSWORD_SECRET_NAME or LOCAL_PASSWORD_HASH set")
         return False
 
-    stored_hash = _get_password_hash()
-    if not stored_hash:
-        return False
-
-    return hmac.compare_digest(_hash_password(access_key), stored_hash)
+    return _verify_password(access_key, _get_password_hash())
 
 
 def build_unauthorized_response(cors_origin: str) -> dict:

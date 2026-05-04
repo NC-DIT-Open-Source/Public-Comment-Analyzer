@@ -2,8 +2,7 @@
 
 import json
 import os
-import hmac
-import hashlib
+import bcrypt
 import boto3
 import logging
 
@@ -27,6 +26,7 @@ def _get_secrets_client():
 
 
 def _get_password_hash():
+    """Return the stored bcrypt hash (cached). Empty string means auth not configured."""
     global _cached_hash
     if _cached_hash is not None:
         return _cached_hash
@@ -47,6 +47,16 @@ def _get_password_hash():
         return ''
 
 
+def _verify_password(password: str, stored_hash: str) -> bool:
+    """Constant-time bcrypt verification. Fails closed on any malformed input."""
+    if not password or not stored_hash:
+        return False
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
+    except (ValueError, TypeError):
+        return False
+
+
 def lambda_handler(event, context):
     headers = {
         'Content-Type': 'application/json',
@@ -58,11 +68,10 @@ def lambda_handler(event, context):
         password = body.get('password', '')
         if not password:
             return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Password is required'})}
-        input_hash = hashlib.sha256(password.encode('utf-8')).hexdigest()
         stored_hash = _get_password_hash()
         if not stored_hash:
             return {'statusCode': 500, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Auth not configured'})}
-        if hmac.compare_digest(input_hash, stored_hash):
+        if _verify_password(password, stored_hash):
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'valid': True})}
         else:
             return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'valid': False, 'message': 'Invalid password'})}
