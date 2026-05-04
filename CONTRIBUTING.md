@@ -40,7 +40,7 @@ Focus the message on the **why**, not the what. The diff already shows what.
 
 ## Local development
 
-You'll need Python 3.11+, Node 20+, and Docker (for SAM local). See [README.md](./README.md#local-development) for the full SAM setup. Quick path:
+You'll need Python 3.12+, Node 20+, and Docker (for SAM local). See [README.md](./README.md#local-development) for the full SAM setup. Quick path:
 
 ```bash
 # Backend deps (per Lambda dir as needed)

@@ -23,7 +23,7 @@ export AWS_PROFILE=your-profile-name
 
 ### Python Environment
 - Always use `.venv` if present (check before creating new ones)
-- Python 3.11+ required
+- Python 3.12+ required (Lambda runtime is python3.12 on Amazon Linux 2023)
 - Backend uses shared modules in `backend/shared/`
 
 ## Architecture Patterns
