@@ -17,7 +17,7 @@ GitHub Actions CI/CD is wired up — every push to `main` auto-deploys to the AW
 - An AWS account you can deploy CloudFormation into.
 - **Bedrock model access** enabled in your target region (default: `us-east-1`) for **Claude Haiku** and **Claude Opus**. Console → Bedrock → Model access → Manage model access.
 - `cdk bootstrap` run once per region for the account.
-- Python 3.11+, Node 20+, AWS CLI, AWS CDK CLI.
+- Python 3.12+, Node 20+, AWS CLI, AWS CDK CLI.
 - (Optional) ACM certificate in `us-east-1` if you want a custom domain.
 
 ### Setup

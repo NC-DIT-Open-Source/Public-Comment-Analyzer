@@ -49,7 +49,7 @@ class _PipBundling:
             # On non-Linux (e.g. macOS), cross-compile for Lambda's Linux runtime
             import platform
             if platform.system() != "Linux":
-                cmd[2:2] = ["--platform", "manylinux2014_x86_64", "--only-binary=:all:"]
+                cmd[2:2] = ["--platform", "manylinux_2_28_x86_64", "--only-binary=:all:"]
             subprocess.check_call(cmd)
         # Copy source files (exclude test files and copy_shared.sh)
         import shutil
@@ -89,7 +89,7 @@ class _LayerBundling:
                 "-r", req_file,
             ]
             if platform.system() != "Linux":
-                cmd[2:2] = ["--platform", "manylinux2014_x86_64", "--only-binary=:all:"]
+                cmd[2:2] = ["--platform", "manylinux_2_28_x86_64", "--only-binary=:all:"]
             subprocess.check_call(cmd)
 
         # Copy shared Python modules (exclude tests)
@@ -318,11 +318,11 @@ class PublicCommentAnalyzerStack(Stack):
             "SharedLayer",
             layer_version_name=f"PublicCommentAnalyzer-Shared-{self.env_name}",
             description="Shared modules for Public Comment Analyzer Lambda functions",
-            compatible_runtimes=[lambda_.Runtime.PYTHON_3_11],
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             code=lambda_.Code.from_asset(
                 "../backend/shared",
                 bundling=BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     command=[
                         "bash", "-c",
                         "mkdir -p /asset-output/python && "
@@ -342,12 +342,12 @@ class PublicCommentAnalyzerStack(Stack):
             self,
             "UploadHandler",
             function_name=f"PublicCommentAnalyzer-UploadHandler-{self.env_name}",
-            runtime=lambda_.Runtime.PYTHON_3_11,
+            runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset(
                 "../backend/upload_handler",
                 bundling=BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
@@ -376,12 +376,12 @@ class PublicCommentAnalyzerStack(Stack):
             self,
             "RowProcessor",
             function_name=f"PublicCommentAnalyzer-RowProcessor-{self.env_name}",
-            runtime=lambda_.Runtime.PYTHON_3_11,
+            runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset(
                 "../backend/row_processor",
                 bundling=BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
@@ -413,12 +413,12 @@ class PublicCommentAnalyzerStack(Stack):
             self,
             "AggregateAnalyzer",
             function_name=f"PublicCommentAnalyzer-AggregateAnalyzer-{self.env_name}",
-            runtime=lambda_.Runtime.PYTHON_3_11,
+            runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset(
                 "../backend/aggregate_analyzer",
                 bundling=BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
@@ -447,12 +447,12 @@ class PublicCommentAnalyzerStack(Stack):
             self,
             "DashboardGenerator",
             function_name=f"PublicCommentAnalyzer-DashboardGenerator-{self.env_name}",
-            runtime=lambda_.Runtime.PYTHON_3_11,
+            runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset(
                 "../backend/dashboard_generator",
                 bundling=BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_11.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
@@ -620,7 +620,7 @@ class PublicCommentAnalyzerStack(Stack):
             self,
             "StatusHandler",
             function_name=f"PublicCommentAnalyzer-StatusHandler-{self.env_name}",
-            runtime=lambda_.Runtime.PYTHON_3_11,
+            runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset("../backend/status_handler"),
             layers=[self.shared_layer],
@@ -703,7 +703,7 @@ class PublicCommentAnalyzerStack(Stack):
             self,
             "AuthHandler",
             function_name=f"PublicCommentAnalyzer-AuthHandler-{self.env_name}",
-            runtime=lambda_.Runtime.PYTHON_3_11,
+            runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_asset("../backend/auth_handler"),
             layers=[self.shared_layer],   # bcrypt + shared auth helpers
