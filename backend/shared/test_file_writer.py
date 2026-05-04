@@ -260,11 +260,41 @@ class TestFileWriter:
         """Test that XLSX file type is case insensitive."""
         headers = ['Name']
         rows = [{'Name': 'Test'}]
-        
+
         xlsx_path = os.path.join(self.temp_dir, 'output_case.xlsx')
         self.writer.write(headers, rows, xlsx_path, 'XLSX')
-        
+
         assert os.path.exists(xlsx_path)
+
+    def test_csv_neutralizes_formula_injection(self):
+        """AI output starting with =, +, -, @ must be prefixed with ' so Excel doesn't execute it."""
+        headers = ['analysis']
+        rows = [
+            {'analysis': '=cmd|"/c calc"!A1'},
+            {'analysis': '+1+1'},
+            {'analysis': '-2+3'},
+            {'analysis': '@SUM(1,1)'},
+            {'analysis': 'plain text'},
+        ]
+        csv_path = os.path.join(self.temp_dir, 'formula.csv')
+        self.writer.write(headers, rows, csv_path, 'csv')
+        with open(csv_path) as f:
+            data = list(csv.DictReader(f))
+        assert data[0]['analysis'].startswith("'=")
+        assert data[1]['analysis'].startswith("'+")
+        assert data[2]['analysis'].startswith("'-")
+        assert data[3]['analysis'].startswith("'@")
+        assert data[4]['analysis'] == 'plain text'
+
+    def test_xlsx_neutralizes_formula_injection(self):
+        """Same check for XLSX path."""
+        headers = ['analysis']
+        rows = [{'analysis': '=HYPERLINK("https://evil")'}]
+        xlsx_path = os.path.join(self.temp_dir, 'formula.xlsx')
+        self.writer.write(headers, rows, xlsx_path, 'xlsx')
+        wb = load_workbook(xlsx_path)
+        ws = wb.active
+        assert ws.cell(row=2, column=1).value == '\'=HYPERLINK("https://evil")'
 
 
 if __name__ == '__main__':
