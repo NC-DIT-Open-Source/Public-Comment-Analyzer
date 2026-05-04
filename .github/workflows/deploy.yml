@@ -20,7 +20,7 @@ env:
   ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
   HUSKY: 0
   NODE_VERSION: '22'
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.12'
 
 # Default to read-only; jobs that need more declare their own permissions block.
 permissions:
