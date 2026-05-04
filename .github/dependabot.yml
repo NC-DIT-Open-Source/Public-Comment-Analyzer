@@ -1,0 +1,59 @@
+version: 2
+updates:
+  # Backend Lambda dependencies
+  - package-ecosystem: pip
+    directory: /backend/shared
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+  - package-ecosystem: pip
+    directory: /backend/upload_handler
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+  - package-ecosystem: pip
+    directory: /backend/row_processor
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+  - package-ecosystem: pip
+    directory: /backend/aggregate_analyzer
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+  - package-ecosystem: pip
+    directory: /backend/dashboard_generator
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+
+  # Infrastructure (CDK)
+  - package-ecosystem: pip
+    directory: /infrastructure
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, infrastructure]
+
+  # Frontend
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels: [dependencies, frontend]
+    groups:
+      angular:
+        patterns: ["@angular/*", "@angular-devkit/*"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, ci]

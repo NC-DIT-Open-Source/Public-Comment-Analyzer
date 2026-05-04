@@ -1,48 +1,75 @@
 # Public Comment Analyzer
 
-A cloud-native AWS application that processes CSV and XLSX files containing public comments and generates AI-powered analysis using AWS Bedrock.
+> **Prototype** — built and operated by NC DIT's Office of AI & Policy. Apache 2.0 licensed; you're welcome to fork and deploy your own instance.
 
-**Live URL**: [commentreviewer.oaip.nc.gov](https://commentreviewer.oaip.nc.gov)
+A cloud-native AWS application that processes CSV and XLSX files of public comments and generates AI-powered per-row analysis plus an aggregate summary using AWS Bedrock (Claude).
+
+NC DIT operates an instance at [commentreviewer.oaip.nc.gov](https://commentreviewer.oaip.nc.gov). External users should deploy their own copy to their own AWS account; the steps below walk through that.
+
+**Cost note**: Pay-per-token Bedrock plus standard AWS infra. Roughly **$2-5 per 1,000 comments** depending on column count and aggregate analysis complexity. S3 lifecycle deletes uploads after 7 days.
 
 ## Quick Start
 
-**Note:** GitHub Actions CI/CD is now configured! Every push to `main` automatically deploys changes to AWS.
+GitHub Actions CI/CD is wired up — every push to `main` auto-deploys to the AWS account whose credentials are in your repo's `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets.
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- AWS CLI configured
-- AWS CDK CLI installed
+### Prerequisites for external deployment
+
+- An AWS account you can deploy CloudFormation into.
+- **Bedrock model access** enabled in your target region (default: `us-east-1`) for **Claude Haiku** and **Claude Opus**. Console → Bedrock → Model access → Manage model access.
+- `cdk bootstrap` run once per region for the account.
+- Python 3.11+, Node 20+, AWS CLI, AWS CDK CLI.
+- (Optional) ACM certificate in `us-east-1` if you want a custom domain.
 
 ### Setup
+
 1. Copy `.env.example` to `.env` and set your AWS profile:
    ```bash
    cp .env.example .env
    # Edit .env and set AWS_PROFILE=your-profile-name
    ```
 
-2. Install frontend dependencies (this also sets up pre-push test hooks via Husky):
+2. Install frontend dependencies (also sets up the pre-push test hook via Husky):
    ```bash
    cd frontend
    npm install
    ```
 
-3. Deploy everything:
+3. Bootstrap CDK (once per account/region):
+   ```bash
+   cdk bootstrap --profile $AWS_PROFILE
+   ```
+
+4. Deploy:
    ```bash
    ./scripts/deploy.sh dev
    ```
 
-### Verify Deployment
+### First-time login
+
+The CDK stack provisions an empty Secrets Manager secret for the access password. You must set it after the first deploy:
+
 ```bash
-./scripts/verify-deployment.sh dev
+pwd='<a strong password you choose>'
+hash=$(printf %s "$pwd" | shasum -a 256 | awk '{print $1}')
+aws secretsmanager put-secret-value \
+  --secret-id "PublicCommentAnalyzer-AccessPassword-dev" \
+  --secret-string "{\"password_hash\":\"$hash\"}" \
+  --profile $AWS_PROFILE
 ```
 
-### Custom Domain Setup
-For production deployment with custom domain:
-```bash
-export CERTIFICATE_ARN=arn:aws:acm:us-east-1:ACCOUNT:certificate/CERT_ID
-./scripts/deploy-custom-domain.sh
-```
+Until set, the auth endpoint returns `500 "Auth not configured"` and the app is inaccessible — that's the intended behavior. Save your password somewhere safe (e.g., 1Password) and rotate by re-running the command above.
+
+### Custom domain (optional)
+
+Add these GitHub repository secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Example |
+|---|---|
+| `DOMAIN_NAME` | `myorg-comments.example.com` |
+| `CERTIFICATE_ARN` | `arn:aws:acm:us-east-1:111122223333:certificate/abc-123` |
+| `ALLOWED_ORIGIN` | `https://myorg-comments.example.com` |
+
+If unset, the workflow deploys without a custom domain and you access the app at the auto-generated CloudFront URL (visible in the CloudFormation stack outputs).
 
 ## Architecture
 
@@ -213,8 +240,8 @@ npm run build:prod
 npm run deploy
 ```
 
-### Custom Domain Setup
-See `CUSTOM_DOMAIN_SETUP.md` for detailed instructions on setting up `commentreviewer.oaip.nc.gov`.
+### Custom Domain
+See the **Custom domain (optional)** section in Quick Start above.
 
 ## Security
 
@@ -273,11 +300,22 @@ cdk destroy --context environment=dev --profile $AWS_PROFILE
 # Manually delete S3 buckets and DynamoDB table if needed
 ```
 
+## Customization
+
+The frontend ships with NC DIT branding. To rebrand for your agency:
+
+- **Logo**: replace `frontend/src/assets/blue-dit-logo.png` and `frontend/src/assets/white-dit-logo.png` (recommended ~200×50 px PNG, transparent background).
+- **Footer**: edit the "Prototype by the Office of AI & Policy" text in `frontend/src/app/app.component.html`.
+- **Colors**: tokens live in `frontend/src/styles.scss` and the `_components.scss` partial.
+- **Page title / favicon**: `frontend/src/index.html` and `frontend/src/favicon.ico`.
+
+No code changes needed for any of the above.
+
 ## Resources
 
-- **Live App**: https://commentreviewer.oaip.nc.gov
-- **Design System**: https://zeroheight.com/6cc837e20/p/638fcb-welcome
-- **Region**: us-east-1
+- **NC DIT instance** (reference deployment): https://commentreviewer.oaip.nc.gov
+- **NC DIT Design System** (the look this repo ships with): https://zeroheight.com/6cc837e20/p/638fcb-welcome
+- **Default region**: us-east-1
 
 ## Requirements
 
