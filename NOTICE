@@ -1,0 +1,24 @@
+Public Comment Analyzer
+Copyright 2026 North Carolina Department of Information Technology,
+Office of AI & Policy
+
+This product includes software developed by the Office of AI & Policy
+within the North Carolina Department of Information Technology.
+
+It also bundles or depends on the following third-party software,
+each licensed under its own terms:
+
+  - boto3, botocore (Apache License 2.0) — Amazon Web Services SDK for Python
+  - openpyxl (MIT License) — XLSX file reading and writing
+  - chardet (LGPL 2.1) — character encoding detection
+  - AWS CDK (Apache License 2.0) — infrastructure-as-code
+  - Angular (MIT License) — frontend framework
+  - Angular Material (MIT License) — UI component library
+  - marked (MIT License) — markdown parser
+  - Chart.js (MIT License) — charting
+  - RxJS (Apache License 2.0) — reactive extensions
+  - pytest (MIT License) — Python testing
+  - Husky (MIT License) — git hooks
+
+Refer to the LICENSE file in each dependency's source distribution for
+its full license text.
