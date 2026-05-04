@@ -77,7 +77,7 @@ echo -e "  Start frontend in another terminal:"
 echo -e "    cd frontend && npm start"
 echo -e ""
 echo -e "  Frontend: http://localhost:4200"
-echo -e "  Password: 0x8BKMVy8C7F"
+echo -e "  Password: (whatever the LOCAL_PASSWORD_HASH in local-env.json hashes back to)"
 echo -e ""
 echo -e "Press Ctrl+C to stop all services."
 

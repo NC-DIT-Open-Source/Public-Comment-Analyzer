@@ -2,6 +2,7 @@
 
 import os
 import json
+import hmac
 import hashlib
 import boto3
 from botocore.exceptions import ClientError
@@ -50,25 +51,30 @@ def validate_access_key(event: dict) -> bool:
     """
     Validate the X-Access-Key header against the stored password hash.
 
-    Returns True if valid, False otherwise.
+    Returns True if valid, False otherwise. Fails closed: if no secret is
+    configured and no LOCAL_PASSWORD_HASH is set, all requests are rejected.
     """
-    secret_name = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
-    if not secret_name:
-        # No secret configured — skip auth (e.g. local dev)
-        return True
-
     headers = event.get('headers', {}) or {}
     # API Gateway lowercases header names
     access_key = headers.get('x-access-key') or headers.get('X-Access-Key') or ''
-
     if not access_key:
+        return False
+
+    # Local-dev path: hash is provided directly via env var.
+    local_hash = os.environ.get('LOCAL_PASSWORD_HASH', '')
+    if local_hash:
+        return hmac.compare_digest(_hash_password(access_key), local_hash)
+
+    secret_name = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
+    if not secret_name:
+        logger.warning("Auth not configured: no ACCESS_PASSWORD_SECRET_NAME or LOCAL_PASSWORD_HASH set")
         return False
 
     stored_hash = _get_password_hash()
     if not stored_hash:
         return False
 
-    return _hash_password(access_key) == stored_hash
+    return hmac.compare_digest(_hash_password(access_key), stored_hash)
 
 
 def build_unauthorized_response(cors_origin: str) -> dict:
