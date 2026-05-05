@@ -35,11 +35,16 @@ XLSX_MAGIC_BYTES = b'PK\x03\x04'
 
 
 def _cors_origin() -> str:
-    """Return the allowed CORS origin from environment, falling back to '*'."""
+    """Return the allowed CORS origin from environment.
+
+    Fails closed (empty string) if ALLOWED_ORIGIN is unset so the browser
+    rejects the response — mirrors validate_access_key, which fails closed
+    when no auth secret is configured.
+    """
     origin = os.environ.get('ALLOWED_ORIGIN')
     if not origin:
-        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
-        return '*'
+        logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
+        return ''
     return origin
 
 

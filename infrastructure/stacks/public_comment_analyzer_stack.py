@@ -491,7 +491,11 @@ class PublicCommentAnalyzerStack(Stack):
                 metrics_enabled=True
             ),
             default_cors_preflight_options=apigateway.CorsOptions(
-                allow_origins=[self.allowed_origin] if self.allowed_origin else apigateway.Cors.ALL_ORIGINS,
+                # Fail closed: if no allowed_origin context was supplied, do not
+                # send any CORS headers — mirrors the Lambda handlers, which
+                # also fail closed when ALLOWED_ORIGIN is unset. The deploy
+                # pipeline is expected to always pass --context allowed_origin=...
+                allow_origins=[self.allowed_origin] if self.allowed_origin else [],
                 allow_methods=["GET", "POST", "OPTIONS"],
                 allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Access-Key"]
             ),
