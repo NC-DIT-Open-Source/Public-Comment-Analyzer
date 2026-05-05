@@ -87,20 +87,12 @@ export class FileUploadComponent {
     this.isUploading = true;
     this.errorMessage = null;
 
-    console.log('Starting file upload:', this.selectedFile.name);
-
     this.fileUploadService.uploadFile(this.selectedFile).subscribe({
       next: (metadata) => {
-        console.log('Upload successful, received metadata:', metadata);
         this.uploadedFileMetadata = metadata;
         this.isUploading = false;
         this.fileUploaded.emit(metadata);
-        
-        // Navigate to column definition page
-        console.log('Navigating to column definition with state:', {
-          fileMetadata: metadata,
-          fileName: this.selectedFile?.name
-        });
+
         this.router.navigate(['/select-comment-column'], {
           state: {
             fileMetadata: metadata,

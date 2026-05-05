@@ -26,7 +26,7 @@ logger.setLevel(logging.INFO)
 
 DATA_BUCKET = os.environ.get('DATA_BUCKET')
 JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
-CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
+CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-7"
 
 # Reuse aggregate_analyzer's map-reduce constants
 CHUNK_SIZE = 150
@@ -38,10 +38,16 @@ _bedrock_runtime = None
 
 
 def _cors_origin() -> str:
+    """Return the allowed CORS origin from environment.
+
+    Fails closed (empty string) if ALLOWED_ORIGIN is unset so the browser
+    rejects the response — mirrors validate_access_key, which fails closed
+    when no auth secret is configured.
+    """
     origin = os.environ.get('ALLOWED_ORIGIN')
     if not origin:
-        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
-        return '*'
+        logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
+        return ''
     return origin
 
 
