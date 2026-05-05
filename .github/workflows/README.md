@@ -105,20 +105,20 @@ You can manually trigger a deployment:
 ## Troubleshooting
 
 ### Deployment Fails with "Stack does not exist"
-- Run a manual deployment first to create the initial stack
-- Or deploy locally once: `./scripts/deploy.sh dev`
+- Run a manual deployment first to create the initial stack:
+  `cd infrastructure && cdk deploy --context environment=dev --profile $AWS_PROFILE`
 
 ### CloudFront Invalidation Fails
 - Check that the CloudFront distribution exists
 - Verify AWS credentials have CloudFront permissions
 
 ### Frontend Build Fails
-- Check Node.js version (should be 18)
+- Check Node.js version (should be 22)
 - Verify package-lock.json is committed
 - Check for missing dependencies
 
 ### Backend Tests Fail
-- Check Python version (should be 3.11)
+- Check Python version (should be 3.12)
 - Verify all requirements.txt files are up to date
 - Check that shared modules are copied correctly
 
@@ -127,8 +127,8 @@ You can manually trigger a deployment:
 The workflow uses these environment variables:
 - `AWS_REGION`: us-east-1 (default)
 - `ENVIRONMENT`: dev (default) or prod
-- `NODE_VERSION`: 18
-- `PYTHON_VERSION`: 3.11
+- `NODE_VERSION`: 22
+- `PYTHON_VERSION`: 3.12
 
 ## Deployment Outputs
 
