@@ -1,1 +1,1 @@
-Read AGENTS.md and follow it like it is this file (CLAUDE.md). NEVER put stuff in this file, always write it into AGENTS.md.
+@AGENTS.md
