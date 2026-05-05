@@ -116,21 +116,39 @@ graph TD
 
 ## Local development
 
-You can run the full stack locally with AWS SAM CLI — Lambdas execute in Docker on your machine while still calling real AWS services (S3, DynamoDB, Bedrock) via your AWS profile.
+You can run the full stack locally with AWS SAM CLI — Lambdas execute in Docker on your machine while still calling real AWS services (S3, DynamoDB, Bedrock) via your AWS profile. You don't need to run `cdk bootstrap` or `cdk deploy` for this — the account just needs to have been deployed to once already (someone else's job, or yours from the steps above).
+
+### Minimum AWS permissions
+
+The IAM principal whose creds you're using locally needs `bedrock:InvokeModel` on the Claude Haiku/Opus model + inference-profile ARNs, plus read/write on the deployed `public-comment-analyzer-data-<env>-<account>` S3 bucket and `PublicCommentAnalyzer-Jobs-<env>` DynamoDB table. `ssm:GetParameter` on `/cdk-bootstrap/*` is needed if you'll re-synth the CDK template locally. Bedrock model access for Claude Haiku and Claude Opus must also be enabled in your region (Console → Bedrock → Model access).
+
+If you're using a dedicated locked-down dev user, also pair it with an AWS Budgets action so a leaked credential can't run up unbounded Bedrock spend — Bedrock has no per-principal cost cap.
+
+### Setup
 
 ```bash
-# 1. Activate venv and synth the CDK template (one-time, or after infra changes)
+# 1. Create local-env.json from the example and fill in your values
+cp local-env.example.json local-env.json
+
+# 2. Generate a bcrypt hash of whatever password you want for local access
 source .venv/bin/activate
+python -c "import bcrypt; print(bcrypt.hashpw(b'pick-any-local-password', bcrypt.gensalt(12)).decode())"
+# → paste the resulting $2b$12$… string into local-env.json as LOCAL_PASSWORD_HASH
+
+# 3. Replace REPLACE_WITH_AWS_ACCOUNT_ID in local-env.json with your account ID:
+aws sts get-caller-identity --query Account --output text --profile $AWS_PROFILE
+
+# 4. Synth the CDK template (one-time, or after infra changes)
 cd infrastructure && cdk synth --profile $AWS_PROFILE && cd ..
 
-# 2. Start local API gateway proxy + SAM local Lambda
+# 5. Start local API gateway proxy + SAM local Lambda
 bash scripts/start-local.sh
 
-# 3. In another terminal:
+# 6. In another terminal:
 cd frontend && npm start    # http://localhost:4200
 ```
 
-Port 3000 is the proxy the frontend talks to; port 3001 is the SAM Lambda runtime. Code edits are picked up on the next request — infra changes (CDK) require re-running `cdk synth`. `local-env.json` (gitignored) holds env overrides; set `LOCAL_PASSWORD_HASH` to a bcrypt hash of your local dev password to bypass Secrets Manager.
+Port 3000 is the proxy the frontend talks to; port 3001 is the SAM Lambda runtime. Code edits are picked up on the next request — infra changes (CDK) require re-running `cdk synth`. `local-env.json` is gitignored; setting `LOCAL_PASSWORD_HASH` lets the auth handler skip Secrets Manager so you don't need `secretsmanager:GetSecretValue` on your local IAM user.
 
 For test commands and the contribution workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
