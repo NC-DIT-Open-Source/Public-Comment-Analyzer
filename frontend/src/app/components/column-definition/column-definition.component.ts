@@ -66,21 +66,15 @@ export class ColumnDefinitionComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    console.log('ColumnDefinitionComponent ngOnInit');
-    console.log('Initial fileMetadata:', this.fileMetadata);
-    console.log('History state:', history.state);
-
     // If no file metadata, redirect back to upload
     if (!this.fileMetadata) {
       const state = history.state;
       if (state && state.fileMetadata) {
-        console.log('Found fileMetadata in history.state');
         this.fileMetadata = state.fileMetadata;
         this.fileName = state.fileName || 'uploaded file';
         this.selectedCommentColumn = state.selectedCommentColumn || null;
         this.contextDescription = state.contextDescription || null;
       } else {
-        console.log('No fileMetadata found, redirecting to upload');
         this.router.navigate(['/upload']);
       }
     }
