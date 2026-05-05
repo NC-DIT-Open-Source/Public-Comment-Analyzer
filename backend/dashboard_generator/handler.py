@@ -26,7 +26,7 @@ logger.setLevel(logging.INFO)
 
 DATA_BUCKET = os.environ.get('DATA_BUCKET')
 JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
-CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
+CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-7"
 
 # Reuse aggregate_analyzer's map-reduce constants
 CHUNK_SIZE = 150
