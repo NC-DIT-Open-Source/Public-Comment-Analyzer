@@ -126,7 +126,9 @@ bash scripts/start-local.sh         # API proxy on :3000, SAM Lambda on :3001
 cd frontend && npm start            # http://localhost:4200
 ```
 
-`local-env.json` (gitignored) overrides Lambda env vars for local runs — set `LOCAL_PASSWORD_HASH` to a bcrypt hash of your local dev password. CORS is opened to `*` locally.
+`local-env.json` (gitignored) overrides Lambda env vars for local runs — copy from `local-env.example.json` and fill in `DATA_BUCKET` (the deployed bucket name), `JOBS_TABLE`, and `LOCAL_PASSWORD_HASH` (bcrypt hash of your chosen local password). When `LOCAL_PASSWORD_HASH` is set, `auth.py` short-circuits the Secrets Manager call, so a local-only IAM user does NOT need `secretsmanager:GetSecretValue`. CORS is opened to `*` locally.
+
+`cdk bootstrap` and `cdk deploy` are deploy operations and are NOT required for local dev — the account just needs to have been bootstrapped/deployed to once already. If a contributor is trying to run locally and gets `Not authorized to perform cloudformation:DescribeStacks` from `cdk bootstrap`, they're following the deploy steps by mistake; point them at the README's Local development section instead.
 
 ## Tests
 
