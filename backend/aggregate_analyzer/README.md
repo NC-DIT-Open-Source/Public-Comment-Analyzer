@@ -1,20 +1,20 @@
 # Aggregate Analyzer Lambda Function
 
-This Lambda function generates aggregate sentiment analysis using Claude Opus 4.6 for the Public Comment Analyzer application.
+This Lambda function generates aggregate sentiment analysis using Claude Opus 4.7 for the Public Comment Analyzer application.
 
 ## Overview
 
-The aggregate analyzer reads processed comment data from S3, formats it for analysis, and uses AWS Bedrock with Claude Opus 4.6 to generate comprehensive aggregate insights including sentiment distribution, key themes, and quantitative summaries.
+The aggregate analyzer reads processed comment data from S3, formats it for analysis, and uses AWS Bedrock with Claude Opus 4.7 to generate comprehensive aggregate insights including sentiment distribution, key themes, and quantitative summaries.
 
 ## Requirements
 
 This function implements the following requirements:
-- **6.1**: Send complete processed data to AWS Bedrock with Claude Opus 4.6
+- **6.1**: Send complete processed data to AWS Bedrock with Claude Opus 4.7
 - **6.2**: Request summary analysis including sentiment distribution and key themes
 - **6.3**: Display aggregate analysis to user in readable format
 - **6.5**: Allow users to download or copy aggregate analysis text
 - **7.2**: Use AWS Bedrock for all AI model access
-- **7.4**: Use Claude Opus 4.6 for aggregate analysis
+- **7.4**: Use Claude Opus 4.7 for aggregate analysis
 
 ## API
 
@@ -56,7 +56,7 @@ The prompt requests:
 4. Quantitative summary statistics
 
 ### Bedrock Integration
-- Model: `anthropic.claude-opus-4-20250514`
+- Model: `us.anthropic.claude-opus-4-7` (cross-region inference profile)
 - Max tokens: 2000
 - Retry logic: 3 attempts with exponential backoff (1s, 2s, 4s)
 

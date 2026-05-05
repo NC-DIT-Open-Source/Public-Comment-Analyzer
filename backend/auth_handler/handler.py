@@ -9,9 +9,9 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
-if CORS_ORIGIN == '*':
-    logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
+CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
+if not CORS_ORIGIN:
+    logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
 SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
 
 _secrets_client = None

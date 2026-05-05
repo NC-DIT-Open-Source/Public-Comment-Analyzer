@@ -30,7 +30,7 @@ DATA_BUCKET = os.environ.get('DATA_BUCKET')
 JOBS_TABLE_NAME = os.environ.get('JOBS_TABLE')
 
 # Constants
-CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-6-v1"
+CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-7"
 CLAUDE_HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 CHUNK_SIZE = 150  # rows per chunk for map-reduce summarization
 MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
@@ -44,11 +44,16 @@ def _sanitize_for_prompt(text: str) -> str:
 
 
 def _cors_origin() -> str:
-    """Return the allowed CORS origin from environment, falling back to '*'."""
+    """Return the allowed CORS origin from environment.
+
+    Fails closed (empty string) if ALLOWED_ORIGIN is unset so the browser
+    rejects the response — mirrors validate_access_key, which fails closed
+    when no auth secret is configured.
+    """
     origin = os.environ.get('ALLOWED_ORIGIN')
     if not origin:
-        logger.warning("ALLOWED_ORIGIN not set, falling back to '*'")
-        return '*'
+        logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
+        return ''
     return origin
 
 
@@ -87,7 +92,7 @@ def _get_bedrock_runtime():
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Generate aggregate sentiment analysis using Claude Opus 4.6.
+    Generate aggregate sentiment analysis using Claude Opus 4.7.
     
     Supports two invocation modes:
     1. Async invocation (from row_processor): Generates and caches analysis
@@ -219,7 +224,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         prompt = _construct_aggregate_prompt(formatted_data, job_record['analysisColumns'],
                                             context_description=context_description)
         
-        # Call Bedrock with Claude Opus 4.6
+        # Call Bedrock with Claude Opus 4.7
         aggregate_analysis = _call_bedrock_opus(prompt)
         
         # Store analysis in DynamoDB
@@ -598,7 +603,7 @@ Be concise but thorough. Focus on substance, not style."""
 
 def _call_bedrock_opus(prompt: str) -> str:
     """
-    Call AWS Bedrock with Claude Opus 4.6 model.
+    Call AWS Bedrock with Claude Opus 4.7 model.
     
     Args:
         prompt: Analysis prompt

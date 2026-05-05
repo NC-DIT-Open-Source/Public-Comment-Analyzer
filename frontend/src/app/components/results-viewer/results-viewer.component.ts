@@ -68,19 +68,15 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    console.log('ResultsViewerComponent ngOnInit, jobId:', this.jobId);
-    
     // Also check history.state if not set from navigation
     if (!this.jobId) {
       const state = history.state;
       if (state && state.jobId) {
-        console.log('Found jobId in history.state:', state.jobId);
         this.jobId = state.jobId;
       }
     }
-    
+
     if (this.jobId) {
-      console.log('Loading results for jobId:', this.jobId);
       this.loadResults();
     } else {
       console.error('No jobId found, cannot load results');

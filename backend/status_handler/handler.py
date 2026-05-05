@@ -18,7 +18,9 @@ logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['JOBS_TABLE'])
-CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN') or '*'
+CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
+if not CORS_ORIGIN:
+    logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
 
 UUID_PATTERN = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
