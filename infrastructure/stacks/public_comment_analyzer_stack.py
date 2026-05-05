@@ -626,6 +626,10 @@ class PublicCommentAnalyzerStack(Stack):
             layers=[self.shared_layer],
             role=self.lambda_role,
             timeout=Duration.seconds(10),
+            # 512 MB so the bcrypt verify on every request stays under ~300 ms.
+            # The frontend polls /status every 2 s; at the Lambda default 128 MB
+            # each call took ~4 s and the polling pipeline stalled the UI.
+            memory_size=512,
             environment={
                 "JOBS_TABLE": self.jobs_table.table_name,
                 "ALLOWED_ORIGIN": self.allowed_origin,

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, interval, switchMap, takeWhile, startWith } from 'rxjs';
+import { Observable, interval, concatMap, takeWhile, startWith } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export interface CategoryOption {
@@ -74,9 +74,13 @@ export class ProcessingService {
     const nonTerminal = new Set<JobStatusValue>([
       'pending', 'preview_processing', 'preview_ready', 'processing'
     ]);
+    // concatMap (not switchMap) — when /api/status takes longer than intervalMs
+    // (it can on cold starts or under-provisioned memory), switchMap would
+    // cancel every in-flight request and the UI would never receive a status
+    // update. concatMap queues so each request completes before the next fires.
     return interval(intervalMs).pipe(
       startWith(0),
-      switchMap(() => this.getStatus(jobId)),
+      concatMap(() => this.getStatus(jobId)),
       takeWhile(status => nonTerminal.has(status.status), true)
     );
   }
