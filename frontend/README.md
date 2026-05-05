@@ -1,6 +1,6 @@
 # Public Comment Analyzer - Angular Frontend
 
-This is the Angular 17 frontend application for the Public Comment Analyzer system.
+This is the Angular 21 frontend application for the Public Comment Analyzer system.
 
 ## Features
 
@@ -12,8 +12,8 @@ This is the Angular 17 frontend application for the Public Comment Analyzer syst
 
 ## Prerequisites
 
-- Node.js 18+ (LTS version recommended)
-- npm 9+
+- Node.js 22+ (LTS version recommended)
+- npm 10+
 
 ## Installation
 

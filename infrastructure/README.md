@@ -4,7 +4,7 @@ AWS CDK infrastructure for Public Comment Analyzer.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - AWS CLI configured with appropriate credentials
 - AWS CDK CLI installed: `npm install -g aws-cdk`
 
@@ -70,23 +70,23 @@ cdk deploy --context account=123456789012 --context region=us-west-2
 ### Lambda Functions
 
 - **Upload Handler**: Validates and stores uploaded files
-  - Runtime: Python 3.11
+  - Runtime: Python 3.12
   - Timeout: 30 seconds
   - Memory: 512 MB
 
 - **Row Processor**: Processes comments using Bedrock
-  - Runtime: Python 3.11
+  - Runtime: Python 3.12
   - Timeout: 15 minutes
   - Memory: 1024 MB
   - Reserved concurrency: 10
 
 - **Aggregate Analyzer**: Generates sentiment analysis
-  - Runtime: Python 3.11
+  - Runtime: Python 3.12
   - Timeout: 5 minutes
   - Memory: 512 MB
 
 - **Status Handler**: Returns job status from DynamoDB
-  - Runtime: Python 3.11
+  - Runtime: Python 3.12
   - Timeout: 10 seconds
 
 ### API Gateway
