@@ -1,10 +1,10 @@
 # Public Comment Analyzer
 
-> 🧪 **Prototype** — built and operated by NC DIT's Office of AI & Policy. Apache 2.0 licensed; you're welcome to fork and deploy your own instance.
+> 🧪 **Prototype** — built and operated by NC DIT's Office of AI & Policy (OAIP). Apache 2.0 licensed; you're welcome to fork and deploy your own instance.
 
 A serverless AWS application that processes CSV/XLSX files of public comments and generates AI per-row analysis plus an aggregate summary using AWS Bedrock (Claude).
 
-NC DIT operates a reference instance at [commentreviewer.oaip.nc.gov](https://commentreviewer.oaip.nc.gov) for use by NC state employees — public access is restricted to North Carolina state government IP ranges. To run it yourself, deploy your own copy to your own AWS account using the steps below.
+NC DIT operates a reference instance at [commentreviewer.oaip.nc.gov](https://commentreviewer.oaip.nc.gov) for use by NC state employees — public access is restricted to a private beta run by OAIP. To run it yourself, deploy your own copy to your own AWS account using the steps below.
 
 **Cost note**: Pay-per-token Bedrock plus standard AWS infra. Roughly **$2-5 per 1,000 comments** depending on column count and aggregate complexity. S3 lifecycle deletes uploads after 7 days.
 
