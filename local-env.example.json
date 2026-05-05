@@ -1,0 +1,9 @@
+{
+  "Parameters": {
+    "DATA_BUCKET": "public-comment-analyzer-data-dev-REPLACE_WITH_AWS_ACCOUNT_ID",
+    "JOBS_TABLE": "PublicCommentAnalyzer-Jobs-dev",
+    "ENVIRONMENT": "dev",
+    "ALLOWED_ORIGIN": "*",
+    "LOCAL_PASSWORD_HASH": "REPLACE_WITH_BCRYPT_HASH"
+  }
+}
