@@ -25,7 +25,7 @@ In scope:
 Out of scope:
 - Vulnerabilities in third-party dependencies — please report those upstream and let us know via a normal advisory so we can pin/patch.
 - Findings that require physical access, social engineering, or compromise of the deploying organization's AWS account.
-- Issues in NC DIT's specific deployment (`commentreviewer.oaip.nc.gov`) that are not reproducible against a fresh deploy of this repo. For those, contact NC DIT directly.
+- Issues in a specific operator's deployment that are not reproducible against a fresh deploy of this repo. For those, contact the operator of that deployment directly.
 
 ## Supported versions
 
