@@ -71,7 +71,7 @@ If you tune concurrency, change all three values (worker pool, reserved concurre
 - Stored format: **bcrypt** hash (e.g. `$2b$12$...`) in Secrets Manager under `PublicCommentAnalyzer-AccessPassword-<env>`.
 - Verified with `bcrypt.checkpw` (constant-time). Never use `==` or SHA-256 — both have appeared in this repo's history and were both wrong.
 - `validate_access_key` fails closed: if neither `ACCESS_PASSWORD_SECRET_NAME` nor `LOCAL_PASSWORD_HASH` is configured, every request is rejected.
-- Frontend stores the password in `sessionStorage` (clears on tab close), not `localStorage`. Do not regress this.
+- Frontend holds the access key **in memory only** on the root-scoped `AuthService` singleton (`auth.service.ts`) — never in `sessionStorage`/`localStorage`. This keeps the credential out of any JS-readable web storage (the prior `sessionStorage` approach tripped CodeQL `js/clear-text-storage-of-sensitive-data` / Checkmarx CWE-922). The `authInterceptor` reads the key via `AuthService.getAccessKey()`, not from storage. Trade-off: a full page reload clears it and re-shows the access gate — acceptable since job state isn't persisted across reloads either. Do not regress this back to web storage.
 
 ### Prompt injection
 User-supplied comment data is wrapped in `<comment_data>` tags with anti-injection framing. When you add new prompts, follow the same pattern:
@@ -226,7 +226,7 @@ aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" --p
 
 - **Don't store passwords as SHA-256 hashes.** Use bcrypt via `bcrypt.checkpw`. SHA-256 hashes were used historically and a literal password + hash leaked into git — both have been removed by `git filter-repo`.
 - **Don't `bypassSecurityTrustHtml` on AI output.** Use Angular's default sanitizer.
-- **Don't put the password (or anything else sensitive) in `localStorage`.** Use `sessionStorage`.
+- **Don't put the access key (or anything else sensitive) in `localStorage` or `sessionStorage`.** Hold it in memory on the `AuthService` singleton — web storage of the credential is flagged by CodeQL/Checkmarx (CWE-922).
 - **Don't pin Lambdas to Python 3.11 / AL2.** Modern wheels need glibc 2.28+.
 - **Don't return `True` when auth config is missing.** Always fail closed.
 - **Don't use `git filter-branch`.** Use `git filter-repo` (`brew install git-filter-repo`).

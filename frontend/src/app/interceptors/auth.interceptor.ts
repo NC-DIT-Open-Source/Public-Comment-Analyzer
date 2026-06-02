@@ -3,11 +3,11 @@ import { inject } from '@angular/core';
 import { tap } from 'rxjs/operators';
 import { AuthService } from '../services/auth.service';
 
-const ACCESS_KEY_STORAGE_KEY = 'pca_access_key';
-
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
-  const accessKey = sessionStorage.getItem(ACCESS_KEY_STORAGE_KEY);
+  // AuthService holds the access key in memory only — it is the single source of
+  // truth. The interceptor never reads web storage directly.
+  const accessKey = authService.getAccessKey();
 
   // Don't attach the key to the auth/validate call itself
   if (accessKey && !req.url.includes('/auth/validate')) {
