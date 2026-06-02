@@ -5,7 +5,6 @@ import { TestBed } from '@angular/core/testing';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
 
-const STORAGE_KEY = 'pca_access_key';
 const API = 'http://localhost:3000/api';
 
 describe('authInterceptor', () => {
@@ -57,17 +56,18 @@ describe('authInterceptor', () => {
   });
 
   it('does NOT read the access key from web storage — AuthService is the only source', () => {
-    // The access key must never be sourced from sessionStorage/localStorage.
-    // Even when both contain a value, nothing is attached unless AuthService
-    // (in-memory) returns it. This guards against regressing back to a
-    // web-storage-backed credential (CodeQL js/clear-text-storage-of-sensitive-data).
-    sessionStorage.setItem(STORAGE_KEY, 'leaked-from-sessionstorage');
-    localStorage.setItem(STORAGE_KEY, 'leaked-from-localstorage');
+    // Guard against regressing to a web-storage-backed credential
+    // (CodeQL js/clear-text-storage-of-sensitive-data / Checkmarx CWE-922).
+    // We prove the interceptor never consults web storage by spying on the
+    // storage *reads* — and we deliberately never write a credential to storage,
+    // so this test introduces no insecure-storage sink of its own.
+    const getItemSpy = spyOn(Storage.prototype, 'getItem').and.callThrough();
 
     http.get(`${API}/upload`).subscribe();
     const req = httpMock.expectOne(`${API}/upload`);
 
     expect(req.request.headers.has('X-Access-Key')).toBeFalse();
+    expect(getItemSpy).not.toHaveBeenCalled();
     req.flush({});
   });
 

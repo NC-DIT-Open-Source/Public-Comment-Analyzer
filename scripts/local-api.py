@@ -7,11 +7,9 @@ Runs on port 3000. Point start-local.sh SAM start-api to port 3001 instead.
 """
 
 import http.server
+import http.client
 import json
 import base64
-import urllib.request
-import urllib.error
-import urllib.parse
 
 SAM_PORT = 3001
 LISTEN_PORT = 3000
@@ -44,6 +42,15 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self._cors_preflight()
+
+    def _json_error(self, status, message):
+        self.send_response(status)
+        for k, v in CORS_HEADERS.items():
+            self.send_header(k, v)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        self.wfile.write(json.dumps({'error': message}).encode())
 
     def _proxy(self):
         content_length = int(self.headers.get('Content-Length', 0))
@@ -81,50 +88,42 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         # Determine which Lambda to invoke via SAM local-lambda
         function_name = self._route_to_function()
         if not function_name:
-            self.send_response(404)
-            for k, v in CORS_HEADERS.items():
-                self.send_header(k, v)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'No route matched'}).encode())
+            self._json_error(404, 'No route matched')
             return
 
-        # Invoke via SAM local lambda endpoint
+        # SSRF control: reach the upstream via http.client with a *constant* host
+        # and port (127.0.0.1:SAM_PORT) that are never derived from request data, so
+        # this proxy can only ever talk to the local SAM runtime. Request data rides
+        # in the POST body, which is not a request-destination sink. function_name
+        # comes from the fixed _route_to_function() mapping; the allow-list check
+        # below is a real runtime control (not an `assert`, which -O would strip).
+        if function_name not in ALLOWED_FUNCTIONS:
+            self._json_error(500, 'Resolved function is not in the allow-list')
+            return
+
+        invoke_path = f'/2015-03-31/functions/{function_name}/invocations'
+        conn = http.client.HTTPConnection('127.0.0.1', SAM_PORT, timeout=900)
         try:
-            # Defense-in-depth: re-check function_name against the allow-list
-            # immediately before constructing the URL to make the SSRF guard
-            # explicit and local to the urlopen call.
-            assert function_name in ALLOWED_FUNCTIONS, 'function_name not in allow-list'
-            invoke_url = f'http://127.0.0.1:{SAM_PORT}/2015-03-31/functions/{function_name}/invocations'
-            # Validate the constructed URL targets only the local SAM endpoint.
-            parsed = urllib.parse.urlparse(invoke_url)
-            assert parsed.scheme == 'http', 'invoke_url scheme must be http'
-            assert parsed.hostname == '127.0.0.1', 'invoke_url host must be 127.0.0.1'
-            assert parsed.port == SAM_PORT, 'invoke_url port must be SAM_PORT'
-            req = urllib.request.Request(
-                invoke_url,
-                data=json.dumps(event).encode('utf-8'),
+            conn.request(
+                'POST',
+                invoke_path,
+                body=json.dumps(event).encode('utf-8'),
                 headers={'Content-Type': 'application/json'},
-                method='POST',
             )
-            with urllib.request.urlopen(req, timeout=900) as resp:
-                result = json.loads(resp.read().decode('utf-8'))
-        except urllib.error.URLError as e:
-            self.send_response(502)
-            for k, v in CORS_HEADERS.items():
-                self.send_header(k, v)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': f'SAM invoke failed: {e}'}).encode())
+            resp = conn.getresponse()
+            raw = resp.read()
+            if resp.status != 200:
+                self._json_error(502, f'SAM invoke returned HTTP {resp.status}')
+                return
+            result = json.loads(raw.decode('utf-8'))
+        except (OSError, http.client.HTTPException) as e:
+            self._json_error(502, f'SAM invoke failed: {e}')
             return
-        except Exception as e:
-            self.send_response(500)
-            for k, v in CORS_HEADERS.items():
-                self.send_header(k, v)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+        except Exception as e:  # dev proxy: surface any unexpected error to the client
+            self._json_error(500, str(e))
             return
+        finally:
+            conn.close()
 
         # Forward the Lambda response back to the client
         status = result.get('statusCode', 200)
@@ -147,6 +146,11 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Content-Security-Policy', "default-src 'none'")
         self.end_headers()
+        # Accepted Checkmarx finding "Stored XSS" (local-api.py only): a forwarding
+        # proxy by definition returns the upstream body to the caller, so this write
+        # is flagged. Not exploitable here — the body is served as application/json
+        # with X-Content-Type-Options: nosniff and CSP default-src 'none', and this
+        # script binds to 127.0.0.1 for local dev only and is never deployed.
         if resp_body:
             self.wfile.write(resp_body.encode('utf-8'))
 
