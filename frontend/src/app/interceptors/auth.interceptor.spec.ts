@@ -17,7 +17,8 @@ describe('authInterceptor', () => {
     sessionStorage.clear();
     localStorage.clear();
 
-    authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', ['logout']);
+    authServiceSpy = jasmine.createSpyObj<AuthService>('AuthService', ['logout', 'getAccessKey']);
+    authServiceSpy.getAccessKey.and.returnValue('');
 
     TestBed.configureTestingModule({
       providers: [
@@ -37,8 +38,8 @@ describe('authInterceptor', () => {
     localStorage.clear();
   });
 
-  it('attaches X-Access-Key from sessionStorage on protected requests', () => {
-    sessionStorage.setItem(STORAGE_KEY, 'session-password');
+  it('attaches X-Access-Key from AuthService on protected requests', () => {
+    authServiceSpy.getAccessKey.and.returnValue('session-password');
 
     http.get(`${API}/upload`).subscribe();
     const req = httpMock.expectOne(`${API}/upload`);
@@ -47,7 +48,7 @@ describe('authInterceptor', () => {
     req.flush({});
   });
 
-  it('does NOT attach X-Access-Key when sessionStorage is empty', () => {
+  it('does NOT attach X-Access-Key when AuthService has no key', () => {
     http.get(`${API}/upload`).subscribe();
     const req = httpMock.expectOne(`${API}/upload`);
 
@@ -55,10 +56,12 @@ describe('authInterceptor', () => {
     req.flush({});
   });
 
-  it('does NOT read from localStorage (storage source is pinned to sessionStorage)', () => {
-    // A localStorage value must not leak into the header. This guards against
-    // regressing commit d3bc1df, which moved auth.service.ts to sessionStorage
-    // but left the interceptor reading localStorage.
+  it('does NOT read the access key from web storage — AuthService is the only source', () => {
+    // The access key must never be sourced from sessionStorage/localStorage.
+    // Even when both contain a value, nothing is attached unless AuthService
+    // (in-memory) returns it. This guards against regressing back to a
+    // web-storage-backed credential (CodeQL js/clear-text-storage-of-sensitive-data).
+    sessionStorage.setItem(STORAGE_KEY, 'leaked-from-sessionstorage');
     localStorage.setItem(STORAGE_KEY, 'leaked-from-localstorage');
 
     http.get(`${API}/upload`).subscribe();
@@ -68,8 +71,8 @@ describe('authInterceptor', () => {
     req.flush({});
   });
 
-  it('does NOT attach X-Access-Key on /auth/validate even with sessionStorage set', () => {
-    sessionStorage.setItem(STORAGE_KEY, 'session-password');
+  it('does NOT attach X-Access-Key on /auth/validate even when a key is set', () => {
+    authServiceSpy.getAccessKey.and.returnValue('session-password');
 
     http.post(`${API}/auth/validate`, { password: 'foo' }).subscribe();
     const req = httpMock.expectOne(`${API}/auth/validate`);
@@ -79,7 +82,7 @@ describe('authInterceptor', () => {
   });
 
   it('calls AuthService.logout() when a protected request returns 401', () => {
-    sessionStorage.setItem(STORAGE_KEY, 'session-password');
+    authServiceSpy.getAccessKey.and.returnValue('session-password');
 
     http.get(`${API}/upload`).subscribe({
       next: () => fail('expected 401 error'),

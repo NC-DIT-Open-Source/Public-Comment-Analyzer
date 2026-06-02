@@ -4,30 +4,35 @@ import { BehaviorSubject, Observable, of } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
-const ACCESS_KEY_STORAGE_KEY = 'pca_access_key';
-
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
+  // The shared access key is held in memory only on this root-scoped singleton.
+  // It is deliberately NOT persisted to sessionStorage/localStorage so the
+  // credential never lands in any JS-readable web storage. The trade-off is that
+  // a full page reload clears it and the access gate is shown again — acceptable
+  // because job state is not persisted across reloads either.
+  private accessKey: string | null = null;
+
   private authenticatedSubject = new BehaviorSubject<boolean>(this.hasStoredKey());
   authenticated$ = this.authenticatedSubject.asObservable();
 
   constructor(private http: HttpClient) {}
 
   hasStoredKey(): boolean {
-    return !!sessionStorage.getItem(ACCESS_KEY_STORAGE_KEY);
+    return !!this.accessKey;
   }
 
   getAccessKey(): string {
-    return sessionStorage.getItem(ACCESS_KEY_STORAGE_KEY) || '';
+    return this.accessKey ?? '';
   }
 
   validate(password: string): Observable<boolean> {
     return this.http.post<{ valid: boolean }>(`${environment.apiBaseUrl}/auth/validate`, { password }).pipe(
       map(res => {
         if (res.valid) {
-          sessionStorage.setItem(ACCESS_KEY_STORAGE_KEY, password);
+          this.accessKey = password;
           this.authenticatedSubject.next(true);
         }
         return res.valid;
@@ -37,7 +42,7 @@ export class AuthService {
   }
 
   logout(): void {
-    sessionStorage.removeItem(ACCESS_KEY_STORAGE_KEY);
+    this.accessKey = null;
     this.authenticatedSubject.next(false);
   }
 }
