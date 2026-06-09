@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 import bcrypt
 import boto3
 import logging
@@ -14,6 +15,9 @@ if not CORS_ORIGIN:
     logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
 SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
 
+# Lock-guarded lazy init so concurrent requests on a warm container can't
+# observe partially-initialized globals (Checkmarx Race Condition Global Scope).
+_init_lock = threading.Lock()
 _secrets_client = None
 _cached_hash = None
 
@@ -21,7 +25,9 @@ _cached_hash = None
 def _get_secrets_client():
     global _secrets_client
     if _secrets_client is None:
-        _secrets_client = boto3.client('secretsmanager')
+        with _init_lock:
+            if _secrets_client is None:
+                _secrets_client = boto3.client('secretsmanager')
     return _secrets_client
 
 
@@ -33,15 +39,18 @@ def _get_password_hash():
     # Allow a direct hash for local development (no Secrets Manager needed)
     local_hash = os.environ.get('LOCAL_PASSWORD_HASH', '')
     if local_hash:
-        _cached_hash = local_hash
-        return _cached_hash
+        with _init_lock:
+            _cached_hash = local_hash
+        return local_hash
     if not SECRET_NAME:
         return ''
     try:
         resp = _get_secrets_client().get_secret_value(SecretId=SECRET_NAME)
         secret = json.loads(resp['SecretString'])
-        _cached_hash = secret.get('password_hash', '')
-        return _cached_hash
+        fetched = secret.get('password_hash', '')
+        with _init_lock:
+            _cached_hash = fetched
+        return fetched
     except Exception as e:
         logger.error(f"Error retrieving secret: {e}")
         return ''

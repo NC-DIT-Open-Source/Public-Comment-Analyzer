@@ -20,6 +20,7 @@ from file_parser import FileParser, ParsedFile
 from file_writer import FileWriter
 
 import logging
+import threading
 import traceback
 import time
 import random
@@ -45,6 +46,14 @@ PREVIEW_ROW_COUNT = 20
 PREVIEW_MIN_FILE_SIZE = 50
 
 
+def _log_safe(value: Any, max_len: int = 200) -> str:
+    """Neutralize user-supplied values before logging (Log Forging): strip
+    CR/LF so a crafted value can't fabricate additional log lines, and cap
+    length so logs can't be flooded."""
+    text = str(value).replace('\r', ' ').replace('\n', ' ')
+    return text[:max_len]
+
+
 def _should_use_preview(analysis_columns: List[Dict[str, Any]], total_rows: int) -> bool:
     """Decide whether to run a preview phase before processing the full file."""
     if total_rows < PREVIEW_MIN_FILE_SIZE:
@@ -67,7 +76,11 @@ def _cors_origin() -> str:
     return origin
 
 
-# AWS clients (initialized lazily)
+# AWS clients (initialized lazily). Guarded by a lock: these getters are called
+# from ThreadPoolExecutor workers, and unsynchronized lazy init can construct
+# multiple clients or expose a partially-initialized one (Checkmarx Race
+# Condition Global Scope).
+_clients_lock = threading.Lock()
 _s3_client = None
 _dynamodb = None
 _bedrock_runtime = None
@@ -77,7 +90,9 @@ def _get_s3_client():
     """Get or create S3 client."""
     global _s3_client
     if _s3_client is None:
-        _s3_client = boto3.client('s3')
+        with _clients_lock:
+            if _s3_client is None:
+                _s3_client = boto3.client('s3')
     return _s3_client
 
 
@@ -85,7 +100,9 @@ def _get_dynamodb():
     """Get or create DynamoDB resource."""
     global _dynamodb
     if _dynamodb is None:
-        _dynamodb = boto3.resource('dynamodb')
+        with _clients_lock:
+            if _dynamodb is None:
+                _dynamodb = boto3.resource('dynamodb')
     return _dynamodb
 
 
@@ -93,13 +110,15 @@ def _get_bedrock_runtime():
     """Get or create Bedrock runtime client with connection pool sized for concurrency."""
     global _bedrock_runtime
     if _bedrock_runtime is None:
-        _bedrock_runtime = boto3.client(
-            'bedrock-runtime',
-            config=Config(
-                max_pool_connections=CONCURRENT_WORKERS,
-                retries={'max_attempts': 3, 'mode': 'adaptive'}
-            )
-        )
+        with _clients_lock:
+            if _bedrock_runtime is None:
+                _bedrock_runtime = boto3.client(
+                    'bedrock-runtime',
+                    config=Config(
+                        max_pool_connections=CONCURRENT_WORKERS,
+                        retries={'max_attempts': 3, 'mode': 'adaptive'}
+                    )
+                )
     return _bedrock_runtime
 
 
@@ -629,6 +648,37 @@ def _handle_preview_confirm(event: Dict[str, Any], context: Any, job_id: str) ->
     }
 
 
+ALLOWED_FILE_TYPES = ('csv', 'xlsx', 'xls')
+MAX_ASYNC_ANALYSIS_COLUMNS = 20
+
+
+def _validate_async_event(event: Dict[str, Any]):
+    """Validate the self-invoke async payload before any of it touches S3 keys,
+    temp-file paths, loop bounds, or logs. Raises ValueError on any violation."""
+    job_id = str(event.get('jobId', ''))
+    file_id = str(event.get('fileId', ''))
+    try:
+        uuid.UUID(job_id, version=4)
+        uuid.UUID(file_id, version=4)
+    except ValueError:
+        raise ValueError('jobId/fileId must be valid UUIDs')
+
+    file_type = event.get('fileType')
+    if file_type not in ALLOWED_FILE_TYPES:
+        raise ValueError('fileType must be one of csv/xlsx/xls')
+
+    analysis_columns = event.get('analysisColumns')
+    if not isinstance(analysis_columns, list) or not analysis_columns:
+        raise ValueError('analysisColumns must be a non-empty list')
+    if len(analysis_columns) > MAX_ASYNC_ANALYSIS_COLUMNS:
+        raise ValueError(f'analysisColumns exceeds {MAX_ASYNC_ANALYSIS_COLUMNS}')
+    for col in analysis_columns:
+        if not isinstance(col, dict) or not col.get('name'):
+            raise ValueError('each analysis column must be an object with a name')
+
+    return job_id, file_id, file_type, analysis_columns
+
+
 def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Perform actual async processing of the file.
@@ -640,15 +690,26 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         Success response
     """
-    job_id = event['jobId']
-    file_id = event['fileId']
-    file_type = event['fileType']
+    # Async events originate from our own invoke() calls, but re-validate every
+    # field anyway: anything with lambda:InvokeFunction could craft this payload,
+    # and these values flow into S3 keys, temp-file paths, loop bounds, and logs.
+    try:
+        job_id, file_id, file_type, analysis_columns = _validate_async_event(event)
+    except ValueError as e:
+        logger.error(f"Rejected async processing event: {e}")
+        return {'statusCode': 400, 'body': 'Invalid async processing event'}
+
     selected_comment_column = event.get('selectedCommentColumn')
     context_description = event.get('contextDescription')
-    analysis_columns = event['analysisColumns']
-    input_key = event['inputKey']
-    output_key = event['outputKey']
+    # Rebuild the S3 keys from the validated UUIDs + extension rather than
+    # trusting the event-supplied strings (Unrestricted Write S3 / OS Access
+    # Violation: event data must not choose filesystem or bucket paths).
+    input_key = f"uploads/{file_id}/input.{file_type}"
+    output_key = f"results/{job_id}/output.{file_type}"
     phase = event.get('phase', 'full')
+    if phase not in ('preview', 'full', 'confirm'):
+        logger.error(f"Rejected async processing event: unknown phase")
+        return {'statusCode': 400, 'body': 'Invalid async processing event'}
 
     try:
         logger.info(f"Starting async processing for job {job_id} (phase={phase})")
@@ -674,8 +735,8 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             header_lower = [h.lower() for h in parsed_file.headers]
             if selected_comment_column.lower() not in header_lower:
                 logger.warning(
-                    f"Job {job_id}: selected_comment_column '{selected_comment_column}' not found in "
-                    f"file headers {parsed_file.headers}. Will fall back to all columns per row."
+                    f"Job {job_id}: selected_comment_column '{_log_safe(selected_comment_column)}' not found in "
+                    f"file headers {_log_safe(parsed_file.headers, 500)}. Will fall back to all columns per row."
                 )
 
         if phase == 'preview':
@@ -736,8 +797,8 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'message': error_message,
             'errorType': type(e).__name__
         }])
-        
-        return {'statusCode': 500, 'body': f'Processing failed: {error_message}'}
+
+        return {'statusCode': 500, 'body': 'Processing failed'}
 
 
 def _determine_file_type(file_id: str) -> str:
@@ -1008,8 +1069,7 @@ def _process_rows(job_id: str, parsed_file: ParsedFile,
                 # Log detailed error information
                 logger.error(f"Row {row_number} failed processing")
                 logger.error(f"Error type: {type(e).__name__}")
-                logger.error(f"Error message: {error_msg}")
-                logger.debug(f"Row data: {parsed_file.rows[row_index]}")
+                logger.error(f"Error message: {_log_safe(error_msg, 500)}")
                 
                 # Create error record for DynamoDB
                 error_record = {
@@ -1096,10 +1156,10 @@ def _process_single_row(row: Dict[str, str],
     col_value = row_lower.get(selected_comment_column.lower()) if selected_comment_column else None
     if col_value is not None:
         comment_text = _sanitize_for_prompt(str(col_value))
-        logger.debug(f"Extracted comment from column '{selected_comment_column}'")
+        logger.debug(f"Extracted comment from column '{_log_safe(selected_comment_column)}'")
     else:
         if selected_comment_column:
-            logger.warning(f"Selected comment column '{selected_comment_column}' not found in row. Falling back to all columns.")
+            logger.warning(f"Selected comment column '{_log_safe(selected_comment_column)}' not found in row. Falling back to all columns.")
         comment_text = "\n".join([
             f"{key}: {_sanitize_for_prompt(str(value))}"
             for key, value in row.items()

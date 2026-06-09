@@ -2,6 +2,7 @@
 
 import os
 import json
+import threading
 import bcrypt
 import boto3
 from botocore.exceptions import ClientError
@@ -10,6 +11,10 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Lock-guarded lazy init: validate_access_key is reached from threaded handler
+# code, and unsynchronized lazy init can expose partially-initialized globals
+# (Checkmarx Race Condition Global Scope).
+_init_lock = threading.Lock()
 _secrets_client = None
 _cached_password_hash = None
 
@@ -17,7 +22,9 @@ _cached_password_hash = None
 def _get_secrets_client():
     global _secrets_client
     if _secrets_client is None:
-        _secrets_client = boto3.client('secretsmanager')
+        with _init_lock:
+            if _secrets_client is None:
+                _secrets_client = boto3.client('secretsmanager')
     return _secrets_client
 
 
@@ -37,8 +44,10 @@ def _get_password_hash() -> str:
     try:
         response = _get_secrets_client().get_secret_value(SecretId=secret_name)
         secret = json.loads(response['SecretString'])
-        _cached_password_hash = secret.get('password_hash', '')
-        return _cached_password_hash
+        fetched = secret.get('password_hash', '')
+        with _init_lock:
+            _cached_password_hash = fetched
+        return fetched
     except ClientError as e:
         logger.error(f"Failed to retrieve access password secret: {e}")
         return ''

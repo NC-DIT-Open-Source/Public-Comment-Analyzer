@@ -122,18 +122,21 @@ class TestErrorHandling(unittest.TestCase):
         mock_bedrock_client.invoke_model.side_effect = mock_invoke_model
         mock_get_bedrock.return_value = mock_bedrock_client
         
-        # Execute async processing directly (bypass API Gateway flow)
+        # Execute async processing directly (bypass API Gateway flow).
+        # IDs must be valid v4 UUIDs — _process_async validates them and
+        # rebuilds the S3 keys from them.
         job_id = str(uuid.uuid4())
+        file_id = str(uuid.uuid4())
         event = {
             'asyncProcessing': True,
             'jobId': job_id,
-            'fileId': 'test-file-123',
+            'fileId': file_id,
             'fileType': 'csv',
             'analysisColumns': [
                 {'name': 'sentiment', 'instructions': 'Analyze sentiment'},
                 {'name': 'category', 'instructions': 'Categorize comment'}
             ],
-            'inputKey': 'uploads/test-file-123/input.csv',
+            'inputKey': f'uploads/{file_id}/input.csv',
             'outputKey': f'results/{job_id}/output.csv'
         }
         

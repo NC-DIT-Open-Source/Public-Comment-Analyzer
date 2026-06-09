@@ -34,6 +34,13 @@ MAX_ROW_COUNT = 50_000
 XLSX_MAGIC_BYTES = b'PK\x03\x04'
 
 
+def _log_safe(value, max_len: int = 200) -> str:
+    """Neutralize user-supplied values before logging (Log Forging): strip
+    CR/LF so a crafted value can't fabricate log lines, and cap length."""
+    text = str(value).replace('\r', ' ').replace('\n', ' ')
+    return text[:max_len]
+
+
 def _cors_origin() -> str:
     """Return the allowed CORS origin from environment.
 
@@ -148,9 +155,15 @@ def get_file_extension(filename: str) -> str:
     return ''
 
 
+# Canonical extensions: S3 keys are always built from this mapping's values,
+# never the user-supplied filename, so user input can't choose the write path
+# (Checkmarx Unrestricted Write S3).
+CANONICAL_EXTENSIONS = {'csv': 'csv', 'xlsx': 'xlsx', 'xls': 'xls'}
+
+
 def validate_file_format(extension: str) -> bool:
     """Validate that file format is CSV or XLSX."""
-    return extension in ['csv', 'xlsx', 'xls']
+    return extension in CANONICAL_EXTENSIONS
 
 
 def validate_file_content(file_content: bytes, extension: str) -> bool:
@@ -197,12 +210,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return build_unauthorized_response(_cors_origin())
     
     try:
-        # Extract content type and body
+        # Extract content type and body. Never log the headers dict — it carries
+        # the X-Access-Key credential (and is user input; Log Forging).
         headers = event.get('headers', {})
-        logger.debug(f"Headers: {headers}")
-        
+
         content_type = headers.get('content-type') or headers.get('Content-Type', '')
-        logger.info(f"Content-Type: {content_type}")
+        logger.info(f"Content-Type: {_log_safe(content_type)}")
         
         if not content_type.startswith('multipart/form-data'):
             logger.error("Invalid content type")
@@ -233,8 +246,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info("Parsing multipart data...")
         try:
             file_data = parse_multipart_form_data(body, content_type)
-            logger.info(f"Parsed file: {file_data['filename']}, size: {len(file_data['file'])} bytes")
+            logger.info(f"Parsed file: {_log_safe(file_data['filename'])}, size: {len(file_data['file'])} bytes")
         except Exception as e:
+            # Log the detail; return only a generic message (Information
+            # Exposure Through an Error Message).
             logger.error(f"Error parsing multipart data: {str(e)}")
             return {
                 'statusCode': 400,
@@ -245,7 +260,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'body': json.dumps({
                     'error': {
                         'code': 'INVALID_MULTIPART_DATA',
-                        'message': f'Failed to parse multipart data: {str(e)}'
+                        'message': 'The uploaded form data could not be parsed. Please re-upload the file.'
                     }
                 })
             }
@@ -272,10 +287,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Validate file format by extension
         extension = get_file_extension(filename)
-        logger.info(f"File extension: {extension}")
-        
+        logger.info(f"File extension: {_log_safe(extension, 20)}")
+
         if not validate_file_format(extension):
-            logger.warning(f"Invalid file format: {extension}")
+            logger.warning(f"Invalid file format: {_log_safe(extension, 20)}")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -307,10 +322,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 })
             }
         
+        # From here on use only the canonical extension (fixed allow-list value),
+        # so the temp-file suffix and S3 key never contain user-controlled text.
+        extension = CANONICAL_EXTENSIONS[extension]
+
         # Generate unique file ID
         file_id = str(uuid.uuid4())
         logger.info(f"Generated file ID: {file_id}")
-        
+
         # Save file to temporary location for parsing
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{extension}') as tmp_file:
             tmp_file.write(file_content)
@@ -368,7 +387,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'version': '1.1.0',
                 'deployedVia': 'GitHub Actions CI/CD'
             }
-            logger.info(f"Returning success response: {response_body}")
+            logger.info(f"Upload succeeded: fileId={file_id}, rows={parsed_file.row_count}, cols={len(parsed_file.headers)}")
             
             return {
                 'statusCode': 200,
