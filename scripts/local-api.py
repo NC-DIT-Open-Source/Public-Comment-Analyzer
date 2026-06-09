@@ -18,6 +18,11 @@ CORS_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With,X-Access-Key',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS,PUT,DELETE',
 }
+# HSTS satisfies the Checkmarx "Missing HSTS Header" check. It is a no-op for
+# this loopback-only dev proxy (browsers ignore HSTS over plain HTTP), but it
+# keeps the scanner clean; prod HSTS is enforced by CloudFront's
+# ResponseHeadersPolicy in the CDK stack.
+HSTS_HEADER = ('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
 
 # Allow-list of Lambda function names this proxy is permitted to invoke.
 # Any value reaching urlopen must come from this set — breaks SSRF taint flow
@@ -38,6 +43,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         for k, v in CORS_HEADERS.items():
             self.send_header(k, v)
+        self.send_header(*HSTS_HEADER)
         self.end_headers()
 
     def do_OPTIONS(self):
@@ -49,6 +55,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.send_header('Content-Type', 'application/json')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header(*HSTS_HEADER)
         self.end_headers()
         self.wfile.write(json.dumps({'error': message}).encode())
 
@@ -102,6 +109,10 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
 
         invoke_path = f'/2015-03-31/functions/{function_name}/invocations'
+        # Accepted Checkmarx finding "Communication Over HTTP" (local-api.py
+        # only): the upstream is the SAM CLI Lambda emulator on 127.0.0.1 —
+        # loopback traffic never leaves the machine, and SAM local does not
+        # serve TLS. This script is local-dev tooling and is never deployed.
         conn = http.client.HTTPConnection('127.0.0.1', SAM_PORT, timeout=900)
         try:
             conn.request(
@@ -145,6 +156,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Content-Security-Policy', "default-src 'none'")
+        self.send_header(*HSTS_HEADER)
         self.end_headers()
         # Accepted Checkmarx finding "Stored XSS" (local-api.py only): a forwarding
         # proxy by definition returns the upstream body to the caller, so this write

@@ -65,9 +65,9 @@ class TestAggregateAnalyzerIntegration(unittest.TestCase):
         mock_table = Mock()
         mock_table.get_item.return_value = {
             'Item': {
-                'jobId': 'test-job-123',
+                'jobId': '123e4567-e89b-42d3-a456-426614174000',
                 'status': 'completed',
-                'outputFileKey': 'results/test-job-123/output.csv',
+                'outputFileKey': 'results/123e4567-e89b-42d3-a456-426614174000/output.csv',
                 'analysisColumns': [
                     {'name': 'sentiment', 'instructions': 'Analyze sentiment as positive, negative, or neutral'},
                     {'name': 'category', 'instructions': 'Categorize as support, oppose, concern, or mixed'}
@@ -120,7 +120,7 @@ Quantitative Summary:
         mock_get_bedrock.return_value = mock_bedrock_client
         
         # Execute handler
-        event = {'pathParameters': {'jobId': 'test-job-123'}, 'asyncAnalysis': True}
+        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}, 'asyncAnalysis': True}
         response = handler.lambda_handler(event, None)
         
         # Verify response
@@ -147,7 +147,7 @@ Quantitative Summary:
         
         # Verify DynamoDB was updated with analysis
         update_call_args = mock_table.update_item.call_args
-        self.assertEqual(update_call_args[1]['Key'], {'jobId': 'test-job-123'})
+        self.assertEqual(update_call_args[1]['Key'], {'jobId': '123e4567-e89b-42d3-a456-426614174000'})
         self.assertIn('aggregateAnalysis', update_call_args[1]['UpdateExpression'])
         
         # Clean up

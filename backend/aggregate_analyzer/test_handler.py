@@ -50,7 +50,7 @@ class TestAggregateAnalyzer(unittest.TestCase):
         mock_dynamodb.Table.return_value = mock_table
         mock_get_dynamodb.return_value = mock_dynamodb
         
-        event = {'pathParameters': {'jobId': 'test-job-123'}}
+        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}
         
         response = handler.lambda_handler(event, None)
         
@@ -65,16 +65,16 @@ class TestAggregateAnalyzer(unittest.TestCase):
         mock_table = Mock()
         mock_table.get_item.return_value = {
             'Item': {
-                'jobId': 'test-job-123',
+                'jobId': '123e4567-e89b-42d3-a456-426614174000',
                 'status': 'processing',
-                'outputFileKey': 'results/test-job-123/output.csv'
+                'outputFileKey': 'results/123e4567-e89b-42d3-a456-426614174000/output.csv'
             }
         }
         mock_dynamodb = Mock()
         mock_dynamodb.Table.return_value = mock_table
         mock_get_dynamodb.return_value = mock_dynamodb
         
-        event = {'pathParameters': {'jobId': 'test-job-123'}}
+        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}
         
         response = handler.lambda_handler(event, None)
         
@@ -90,9 +90,9 @@ class TestAggregateAnalyzer(unittest.TestCase):
         mock_table = Mock()
         mock_table.get_item.return_value = {
             'Item': {
-                'jobId': 'test-job-123',
+                'jobId': '123e4567-e89b-42d3-a456-426614174000',
                 'status': 'completed',
-                'outputFileKey': 'results/test-job-123/output.csv',
+                'outputFileKey': 'results/123e4567-e89b-42d3-a456-426614174000/output.csv',
                 'aggregateAnalysis': 'Cached analysis text',
                 'analysisColumns': [{'name': 'sentiment', 'instructions': 'Analyze sentiment'}]
             }
@@ -104,7 +104,7 @@ class TestAggregateAnalyzer(unittest.TestCase):
         # Mock presigned URL
         mock_presigned_url.return_value = 'https://s3.amazonaws.com/presigned-url'
         
-        event = {'pathParameters': {'jobId': 'test-job-123'}}
+        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}
         
         response = handler.lambda_handler(event, None)
         
@@ -226,12 +226,12 @@ class TestAggregateAnalyzer(unittest.TestCase):
         mock_dynamodb.Table.return_value = mock_table
         mock_get_dynamodb.return_value = mock_dynamodb
         
-        handler._update_job_with_analysis('test-job-123', 'Analysis text')
+        handler._update_job_with_analysis('123e4567-e89b-42d3-a456-426614174000', 'Analysis text')
         
         # Verify update_item was called
         mock_table.update_item.assert_called_once()
         call_args = mock_table.update_item.call_args
-        self.assertEqual(call_args[1]['Key'], {'jobId': 'test-job-123'})
+        self.assertEqual(call_args[1]['Key'], {'jobId': '123e4567-e89b-42d3-a456-426614174000'})
         self.assertIn('aggregateAnalysis', call_args[1]['UpdateExpression'])
     
     @patch('handler._get_s3_client')

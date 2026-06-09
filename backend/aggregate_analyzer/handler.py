@@ -18,11 +18,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from auth import validate_access_key, build_unauthorized_response
 from file_parser import FileParser, ParsedFile
 import logging
+import re
+import threading
 import time
 import traceback
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+UUID_PATTERN = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    re.IGNORECASE,
+)
 
 
 # Environment variables
@@ -34,6 +41,13 @@ CLAUDE_OPUS_MODEL_ID = "us.anthropic.claude-opus-4-7"
 CLAUDE_HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 CHUNK_SIZE = 150  # rows per chunk for map-reduce summarization
 MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
+
+
+def _log_safe(value, max_len: int = 200) -> str:
+    """Neutralize user-supplied values before logging (Log Forging): strip
+    CR/LF so a crafted value can't fabricate log lines, and cap length."""
+    text = str(value).replace('\r', ' ').replace('\n', ' ')
+    return text[:max_len]
 
 
 def _sanitize_for_prompt(text: str) -> str:
@@ -57,7 +71,11 @@ def _cors_origin() -> str:
     return origin
 
 
-# AWS clients (initialized lazily)
+# AWS clients (initialized lazily). Lock-guarded: getters are reached from
+# ThreadPoolExecutor workers during chunk summarization, and unsynchronized
+# lazy init can construct duplicate or partially-initialized clients
+# (Checkmarx Race Condition Global Scope).
+_clients_lock = threading.Lock()
 _s3_client = None
 _dynamodb = None
 _bedrock_runtime = None
@@ -67,7 +85,9 @@ def _get_s3_client():
     """Get or create S3 client."""
     global _s3_client
     if _s3_client is None:
-        _s3_client = boto3.client('s3')
+        with _clients_lock:
+            if _s3_client is None:
+                _s3_client = boto3.client('s3')
     return _s3_client
 
 
@@ -75,7 +95,9 @@ def _get_dynamodb():
     """Get or create DynamoDB resource."""
     global _dynamodb
     if _dynamodb is None:
-        _dynamodb = boto3.resource('dynamodb')
+        with _clients_lock:
+            if _dynamodb is None:
+                _dynamodb = boto3.resource('dynamodb')
     return _dynamodb
 
 
@@ -83,10 +105,12 @@ def _get_bedrock_runtime():
     """Get or create Bedrock runtime client with extended timeout for Opus."""
     global _bedrock_runtime
     if _bedrock_runtime is None:
-        _bedrock_runtime = boto3.client(
-            'bedrock-runtime',
-            config=Config(read_timeout=600, connect_timeout=10)
-        )
+        with _clients_lock:
+            if _bedrock_runtime is None:
+                _bedrock_runtime = boto3.client(
+                    'bedrock-runtime',
+                    config=Config(read_timeout=600, connect_timeout=10)
+                )
     return _bedrock_runtime
 
 
@@ -128,7 +152,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 })
             }
-        
+
+        # Validate jobId is a v4 UUID before it reaches DynamoDB keys or logs —
+        # parity with status_handler/dashboard_generator.
+        if not UUID_PATTERN.match(str(job_id)):
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': _cors_origin()
+                },
+                'body': json.dumps({
+                    'error': {
+                        'code': 'INVALID_JOB_ID',
+                        'message': 'jobId must be a valid UUID'
+                    }
+                })
+            }
+        job_id = str(job_id)
+
         # Get job record from DynamoDB
         job_record = _get_job_record(job_id)
         
@@ -254,7 +296,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.error("AWS service error in aggregate analyzer")
         logger.error(f"Error code: {error_code}")
         logger.error(f"Error message: {error_message}")
-        logger.error(f"Job ID: {event.get('pathParameters', {}).get('jobId')}")
+        logger.error(f"Job ID: {_log_safe(event.get('pathParameters', {}).get('jobId'))}")
         
         # Provide user-friendly error messages
         if error_code == 'NoSuchKey':
@@ -285,7 +327,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.error("Aggregate analysis failed")
         logger.error(f"Error type: {error_type}")
         logger.error(f"Error message: {error_message}")
-        logger.error(f"Job ID: {event.get('pathParameters', {}).get('jobId')}")
+        logger.error(f"Job ID: {_log_safe(event.get('pathParameters', {}).get('jobId'))}")
         logger.error("Stack trace:", exc_info=True)
         
         # Provide user-friendly error message

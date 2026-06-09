@@ -5,6 +5,17 @@
   <title>Public Comment Analyzer</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Framebuster for legacy browsers that ignore X-Frame-Options/CSP
+       (CloudFront already sends frame-options DENY for modern ones).
+       Pattern per Checkmarx guidance: keep the UI hidden unless top-level. -->
+  <style>html { display: none; }</style>
+  <script>
+    if (self === top) {
+      document.documentElement.style.display = 'block';
+    } else {
+      top.location = self.location;
+    }
+  </script>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
