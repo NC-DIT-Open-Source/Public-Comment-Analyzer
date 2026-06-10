@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, ViewChildren, QueryList, ElementRef } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, ViewChildren, QueryList, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -31,6 +31,7 @@ Chart.register(...registerables);
     MatInputModule
   ],
   templateUrl: './results-viewer.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './results-viewer.component.scss'
 })
 export class ResultsViewerComponent implements OnInit, OnDestroy {

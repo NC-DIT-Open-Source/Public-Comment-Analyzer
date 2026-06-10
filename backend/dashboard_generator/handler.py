@@ -34,7 +34,9 @@ CHUNK_SIZE = 150
 MAX_SUMMARY_WORKERS = 10
 
 # Lock-guarded lazy init: getters can be reached from ThreadPoolExecutor
-# workers (Checkmarx Race Condition Global Scope).
+# workers. Every read AND write happens under the lock — no unsynchronized
+# fast-path read (Checkmarx Race Condition Global Scope flags double-checked
+# locking; the uncontended acquire is negligible next to any AWS call).
 _clients_lock = threading.Lock()
 _s3_client = None
 _dynamodb = None
@@ -57,32 +59,29 @@ def _cors_origin() -> str:
 
 def _get_s3_client():
     global _s3_client
-    if _s3_client is None:
-        with _clients_lock:
-            if _s3_client is None:
-                _s3_client = boto3.client('s3')
-    return _s3_client
+    with _clients_lock:
+        if _s3_client is None:
+            _s3_client = boto3.client('s3')
+        return _s3_client
 
 
 def _get_dynamodb():
     global _dynamodb
-    if _dynamodb is None:
-        with _clients_lock:
-            if _dynamodb is None:
-                _dynamodb = boto3.resource('dynamodb')
-    return _dynamodb
+    with _clients_lock:
+        if _dynamodb is None:
+            _dynamodb = boto3.resource('dynamodb')
+        return _dynamodb
 
 
 def _get_bedrock_runtime():
     global _bedrock_runtime
-    if _bedrock_runtime is None:
-        with _clients_lock:
-            if _bedrock_runtime is None:
-                _bedrock_runtime = boto3.client(
-                    'bedrock-runtime',
-                    config=Config(read_timeout=600, connect_timeout=10)
-                )
-    return _bedrock_runtime
+    with _clients_lock:
+        if _bedrock_runtime is None:
+            _bedrock_runtime = boto3.client(
+                'bedrock-runtime',
+                config=Config(read_timeout=600, connect_timeout=10)
+            )
+        return _bedrock_runtime
 
 
 def _cors_headers():

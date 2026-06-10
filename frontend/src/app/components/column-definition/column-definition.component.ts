@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, OnInit } from '@angular/core';
+import { Component, EventEmitter, Output, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { FormBuilder, FormGroup, FormArray, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -27,6 +27,7 @@ import { FileMetadata } from '../../services/file-upload.service';
     MatButtonToggleModule
   ],
   templateUrl: './column-definition.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './column-definition.component.scss'
 })
 export class ColumnDefinitionComponent implements OnInit {

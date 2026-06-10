@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter } from '@angular/core';
+import { Component, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -17,6 +17,7 @@ import { FileUploadService, FileMetadata } from '../../services/file-upload.serv
     MatProgressSpinnerModule
   ],
   templateUrl: './file-upload.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './file-upload.component.scss'
 })
 export class FileUploadComponent {

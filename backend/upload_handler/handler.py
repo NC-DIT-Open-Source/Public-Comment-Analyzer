@@ -202,7 +202,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Response with file metadata or error
     """
     logger.info("=== UPLOAD HANDLER START ===")
-    logger.info(f"Event keys: {list(event.keys())}")
     logger.info(f"Request ID: {getattr(context, 'aws_request_id', 'N/A')}")
 
     # Validate access key
@@ -215,7 +214,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         headers = event.get('headers', {})
 
         content_type = headers.get('content-type') or headers.get('Content-Type', '')
-        logger.info(f"Content-Type: {_log_safe(content_type)}")
+        # Log only the verdict, not the header value (user input; Log Forging).
+        logger.info(f"Content-Type is multipart: {content_type.startswith('multipart/form-data')}")
         
         if not content_type.startswith('multipart/form-data'):
             logger.error("Invalid content type")
@@ -234,8 +234,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         body = event.get('body', '')
-        is_base64 = event.get('isBase64Encoded', False)
-        logger.info(f"Body length: {len(body)}, Is Base64: {is_base64}")
+        # bool()/len() reduce the event values to primitives safe to log.
+        is_base64 = bool(event.get('isBase64Encoded', False))
+        logger.info(f"Body length: {int(len(body))}, Is Base64: {is_base64}")
         
         if not is_base64:
             # If not base64 encoded, encode it

@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { FileUploadComponent } from './file-upload.component';
 import { FileUploadService } from '../../services/file-upload.service';
@@ -16,7 +16,7 @@ describe('FileUploadComponent', () => {
     await TestBed.configureTestingModule({
       imports: [FileUploadComponent],
       providers: [
-        provideHttpClient(),
+        provideHttpClient(withXhr()),
         provideHttpClientTesting(),
         { provide: FileUploadService, useValue: fileUploadServiceSpy }
       ]

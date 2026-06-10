@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import uuid
 from typing import Dict, Any, List
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -43,13 +44,6 @@ CHUNK_SIZE = 150  # rows per chunk for map-reduce summarization
 MAX_SUMMARY_WORKERS = 10  # parallel Haiku calls for chunk summarization
 
 
-def _log_safe(value, max_len: int = 200) -> str:
-    """Neutralize user-supplied values before logging (Log Forging): strip
-    CR/LF so a crafted value can't fabricate log lines, and cap length."""
-    text = str(value).replace('\r', ' ').replace('\n', ' ')
-    return text[:max_len]
-
-
 def _sanitize_for_prompt(text: str) -> str:
     """Strip characters and patterns commonly used in prompt injection."""
     sanitized = text.replace('```', '')
@@ -72,9 +66,10 @@ def _cors_origin() -> str:
 
 
 # AWS clients (initialized lazily). Lock-guarded: getters are reached from
-# ThreadPoolExecutor workers during chunk summarization, and unsynchronized
-# lazy init can construct duplicate or partially-initialized clients
-# (Checkmarx Race Condition Global Scope).
+# ThreadPoolExecutor workers during chunk summarization. Every read AND write
+# happens under the lock — no unsynchronized fast-path read (Checkmarx Race
+# Condition Global Scope flags double-checked locking; the uncontended acquire
+# is nanoseconds next to any AWS call these clients make).
 _clients_lock = threading.Lock()
 _s3_client = None
 _dynamodb = None
@@ -84,34 +79,31 @@ _bedrock_runtime = None
 def _get_s3_client():
     """Get or create S3 client."""
     global _s3_client
-    if _s3_client is None:
-        with _clients_lock:
-            if _s3_client is None:
-                _s3_client = boto3.client('s3')
-    return _s3_client
+    with _clients_lock:
+        if _s3_client is None:
+            _s3_client = boto3.client('s3')
+        return _s3_client
 
 
 def _get_dynamodb():
     """Get or create DynamoDB resource."""
     global _dynamodb
-    if _dynamodb is None:
-        with _clients_lock:
-            if _dynamodb is None:
-                _dynamodb = boto3.resource('dynamodb')
-    return _dynamodb
+    with _clients_lock:
+        if _dynamodb is None:
+            _dynamodb = boto3.resource('dynamodb')
+        return _dynamodb
 
 
 def _get_bedrock_runtime():
     """Get or create Bedrock runtime client with extended timeout for Opus."""
     global _bedrock_runtime
-    if _bedrock_runtime is None:
-        with _clients_lock:
-            if _bedrock_runtime is None:
-                _bedrock_runtime = boto3.client(
-                    'bedrock-runtime',
-                    config=Config(read_timeout=600, connect_timeout=10)
-                )
-    return _bedrock_runtime
+    with _clients_lock:
+        if _bedrock_runtime is None:
+            _bedrock_runtime = boto3.client(
+                'bedrock-runtime',
+                config=Config(read_timeout=600, connect_timeout=10)
+            )
+        return _bedrock_runtime
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -129,6 +121,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         Response with aggregate analysis and download URL
     """
+    # Holds the validated jobId once it passes the UUID gate — the except
+    # blocks below log this instead of re-reading the raw event value.
+    safe_job_id = None
     try:
         # Extract jobId from path parameters
         job_id = event.get('pathParameters', {}).get('jobId')
@@ -169,7 +164,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 })
             }
-        job_id = str(job_id)
+        # Reconstruct from the parsed UUID so downstream DynamoDB keys and log
+        # lines carry a canonical value, not the raw path parameter. The CR/LF
+        # replace is a runtime no-op but is the sanitizer Checkmarx recognizes
+        # (Log Forging).
+        job_id = str(uuid.UUID(str(job_id))).replace('\r', '').replace('\n', '')
+        safe_job_id = job_id
 
         # Get job record from DynamoDB
         job_record = _get_job_record(job_id)
@@ -296,7 +296,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.error("AWS service error in aggregate analyzer")
         logger.error(f"Error code: {error_code}")
         logger.error(f"Error message: {error_message}")
-        logger.error(f"Job ID: {_log_safe(event.get('pathParameters', {}).get('jobId'))}")
+        logger.error(f"Job ID: {safe_job_id or '<failed before jobId validation>'}")
         
         # Provide user-friendly error messages
         if error_code == 'NoSuchKey':
@@ -327,7 +327,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.error("Aggregate analysis failed")
         logger.error(f"Error type: {error_type}")
         logger.error(f"Error message: {error_message}")
-        logger.error(f"Job ID: {_log_safe(event.get('pathParameters', {}).get('jobId'))}")
+        logger.error(f"Job ID: {safe_job_id or '<failed before jobId validation>'}")
         logger.error("Stack trace:", exc_info=True)
         
         # Provide user-friendly error message

@@ -1,5 +1,5 @@
 import { fakeAsync, TestBed, tick } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
 import { JobStatus, ProcessingService } from './processing.service';
@@ -25,7 +25,7 @@ describe('ProcessingService.pollStatus', () => {
     TestBed.configureTestingModule({
       providers: [
         ProcessingService,
-        provideHttpClient(),
+        provideHttpClient(withXhr()),
         provideHttpClientTesting()
       ]
     });

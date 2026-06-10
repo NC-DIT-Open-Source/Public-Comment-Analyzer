@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -22,6 +22,7 @@ import { FileMetadata } from '../../services/file-upload.service';
     MatButtonModule
   ],
   templateUrl: './comment-column-picker.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './comment-column-picker.component.scss'
 })
 export class CommentColumnPickerComponent implements OnInit {
