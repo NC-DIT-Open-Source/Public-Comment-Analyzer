@@ -16,7 +16,9 @@ if not CORS_ORIGIN:
 SECRET_NAME = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
 
 # Lock-guarded lazy init so concurrent requests on a warm container can't
-# observe partially-initialized globals (Checkmarx Race Condition Global Scope).
+# observe partially-initialized globals. Every read AND write of these globals
+# happens under the lock — no unsynchronized fast-path read (Checkmarx Race
+# Condition Global Scope flags double-checked locking).
 _init_lock = threading.Lock()
 _secrets_client = None
 _cached_hash = None
@@ -24,18 +26,18 @@ _cached_hash = None
 
 def _get_secrets_client():
     global _secrets_client
-    if _secrets_client is None:
-        with _init_lock:
-            if _secrets_client is None:
-                _secrets_client = boto3.client('secretsmanager')
-    return _secrets_client
+    with _init_lock:
+        if _secrets_client is None:
+            _secrets_client = boto3.client('secretsmanager')
+        return _secrets_client
 
 
 def _get_password_hash():
     """Return the stored bcrypt hash (cached). Empty string means auth not configured."""
     global _cached_hash
-    if _cached_hash is not None:
-        return _cached_hash
+    with _init_lock:
+        if _cached_hash is not None:
+            return _cached_hash
     # Allow a direct hash for local development (no Secrets Manager needed)
     local_hash = os.environ.get('LOCAL_PASSWORD_HASH', '')
     if local_hash:

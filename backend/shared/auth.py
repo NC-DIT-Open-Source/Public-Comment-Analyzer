@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Lock-guarded lazy init: validate_access_key is reached from threaded handler
-# code, and unsynchronized lazy init can expose partially-initialized globals
-# (Checkmarx Race Condition Global Scope).
+# code. Every read AND write of these globals happens under the lock — no
+# unsynchronized fast-path read (Checkmarx Race Condition Global Scope flags
+# double-checked locking). The lock is non-reentrant: _get_password_hash must
+# release it before calling _get_secrets_client.
 _init_lock = threading.Lock()
 _secrets_client = None
 _cached_password_hash = None
@@ -21,11 +23,10 @@ _cached_password_hash = None
 
 def _get_secrets_client():
     global _secrets_client
-    if _secrets_client is None:
-        with _init_lock:
-            if _secrets_client is None:
-                _secrets_client = boto3.client('secretsmanager')
-    return _secrets_client
+    with _init_lock:
+        if _secrets_client is None:
+            _secrets_client = boto3.client('secretsmanager')
+        return _secrets_client
 
 
 def _get_password_hash() -> str:
@@ -34,8 +35,9 @@ def _get_password_hash() -> str:
     The stored value is a bcrypt hash string (e.g. "$2b$12$...").
     """
     global _cached_password_hash
-    if _cached_password_hash is not None:
-        return _cached_password_hash
+    with _init_lock:
+        if _cached_password_hash is not None:
+            return _cached_password_hash
 
     secret_name = os.environ.get('ACCESS_PASSWORD_SECRET_NAME', '')
     if not secret_name:
@@ -110,4 +112,5 @@ def build_unauthorized_response(cors_origin: str) -> dict:
 def clear_cache():
     """Clear the cached password hash (useful for testing or secret rotation)."""
     global _cached_password_hash
-    _cached_password_hash = None
+    with _init_lock:
+        _cached_password_hash = None
