@@ -165,12 +165,36 @@ jobs:
       # The scan reports but doesn't judge (always exits 0), so gate on severity
       # here. Fails CLOSED on a missing report: no results is an unknown, not a
       # pass. An empty results file is a legitimate clean run and passes.
+      #
+      # `steps.scan.outcome` is not sufficient to detect "didn't run": the action
+      # self-skips on its workflow-validation check (the copy on the default
+      # branch must match byte-for-byte) and still reports `success`. It sets no
+      # `execution_file` in that case, so that output is what distinguishes a real
+      # run from a no-op — without it, a validation skip would fail closed and
+      # block every PR that edits this workflow.
       - name: Gate on high/critical findings
         if: always() && steps.scan.outcome != 'skipped'
         shell: bash
+        env:
+          EXECUTION_FILE: ${{ steps.scan.outputs.execution_file }}
         run: |
           set -uo pipefail
           shopt -s nullglob
+
+          if [ -z "${EXECUTION_FILE:-}" ]; then
+            echo "::warning title=Claude Security::Scan did not execute (workflow validation skip) — nothing to gate on."
+            echo "The action requires this workflow to exist byte-identically on the default"
+            echo "branch. Expected on a PR that adds or edits it; it runs once merged."
+            {
+              echo "### Claude Security — did not run"
+              echo
+              echo "Workflow validation skip: the action requires this file to match the"
+              echo "copy on the default branch. **This diff was not scanned.**"
+              echo "Merging this PR makes subsequent PRs scan normally."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           results=(CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl)
 
           if [ ${#results[@]} -eq 0 ]; then
