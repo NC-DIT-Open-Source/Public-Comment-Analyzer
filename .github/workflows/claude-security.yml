@@ -1,0 +1,207 @@
+# Claude Security — PR-diff scan. Auth via org var CLAUDE_AUTH_MODE
+# (oauth | bedrock) + the matching org secret.
+#
+# Committed here rather than inherited: the org's required-workflow ruleset is
+# sourced from the INTERNAL .github repo, and a required workflow only runs in
+# repos at or below the source's visibility — so it silently skips this public
+# repo. Keep in sync with:
+#   https://github.com/NC-DIT-Open-Source/.github/blob/main/.github/workflows/claude-security.yml
+name: Claude Security
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: claude-security-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # A large diff runs the full research + sweep + verification panel, which
+    # exceeds 30m. Truncation yields no report, which the gate below reads as a
+    # fail-closed block — so a working scan blocked PRs. Small diffs still exit
+    # in minutes.
+    timeout-minutes: 120
+    steps:
+      # Two cases cannot authenticate, because GitHub withholds Actions secrets
+      # from both: fork PRs and bot-initiated runs. Skip and succeed, so the
+      # required check stays satisfiable and PRs remain mergeable.
+      #
+      # Do NOT switch to `pull_request_target` to "fix" forks: it runs with
+      # secrets while checking out untrusted code, handing an attacker-controlled
+      # diff to an agent holding the org token. Fork PRs get human review instead.
+      - name: Decide whether to scan
+        id: guard
+        env:
+          ACTOR: ${{ github.actor }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -uo pipefail
+
+          if [ "${IS_FORK:-false}" = "true" ]; then
+            echo "scan=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: fork PR ($HEAD_REPO) — secrets withheld from fork runs."
+            {
+              echo "### Claude Security — skipped (fork PR)"
+              echo
+              echo "Fork \`$HEAD_REPO\`: Actions secrets are withheld from fork runs, so"
+              echo "the scan cannot authenticate. **This diff needs human security review.**"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          case "$ACTOR" in
+            *"[bot]")
+              echo "scan=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping: bot actor '$ACTOR' has no access to Actions secrets."
+              {
+                echo "### Claude Security — skipped (bot PR)"
+                echo
+                echo "\`$ACTOR\` is a bot; Actions secrets are withheld from bot runs."
+                echo "Dependency bumps are covered by Dependabot advisories and CodeQL."
+                echo "A human commit on this branch runs the scan normally."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "scan=true" >> "$GITHUB_OUTPUT"
+              echo "Scanning: human actor '$ACTOR'."
+              ;;
+          esac
+
+      # Fail fast on bad auth wiring: otherwise it surfaces as a bare
+      # "API Error: 400" ~30 turns deep, which reads like a scan bug.
+      - name: Verify auth configuration
+        if: steps.guard.outputs.scan == 'true'
+        env:
+          AUTH_MODE: ${{ vars.CLAUDE_AUTH_MODE }}
+          OAUTH_TOKEN_PRESENT: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          AWS_ROLE_PRESENT: ${{ secrets.AWS_ROLE_TO_ASSUME != '' }}
+        run: |
+          set -uo pipefail
+          case "${AUTH_MODE:-}" in
+            oauth)
+              if [ "$OAUTH_TOKEN_PRESENT" != "true" ]; then
+                echo "::error title=Claude Security::CLAUDE_AUTH_MODE=oauth but CLAUDE_CODE_OAUTH_TOKEN is not visible to this repository. Check the org secret's repository-access scope."
+                exit 1
+              fi
+              echo "Auth mode: oauth."
+              ;;
+            bedrock)
+              if [ "$AWS_ROLE_PRESENT" != "true" ]; then
+                echo "::error title=Claude Security::CLAUDE_AUTH_MODE=bedrock but AWS_ROLE_TO_ASSUME is unset."
+                exit 1
+              fi
+              echo "Auth mode: bedrock."
+              ;;
+            "")
+              echo "::error title=Claude Security::Org variable CLAUDE_AUTH_MODE is unset. Set it to 'oauth' or 'bedrock'."
+              exit 1
+              ;;
+            *)
+              echo "::error title=Claude Security::CLAUDE_AUTH_MODE='${AUTH_MODE}' is not recognized. Use 'oauth' or 'bedrock'."
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout (full history so the base diff resolves)
+        if: steps.guard.outputs.scan == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fetch base branch so a merge-base exists
+        if: steps.guard.outputs.scan == 'true'
+        run: git fetch --no-tags origin +refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
+
+      - name: Configure AWS credentials (Bedrock)
+        if: steps.guard.outputs.scan == 'true' && vars.CLAUDE_AUTH_MODE == 'bedrock'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Claude Security scan of the PR diff
+        id: scan
+        if: steps.guard.outputs.scan == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }} # for `gh pr comment`
+        with:
+          use_bedrock: ${{ vars.CLAUDE_AUTH_MODE == 'bedrock' && 'true' || '' }}
+          claude_code_oauth_token: ${{ vars.CLAUDE_AUTH_MODE == 'oauth' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+
+          plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
+          plugins: "claude-security@claude-plugins-official"
+          show_full_output: "true"
+          prompt: >-
+            /claude-security:claude-security scan changes
+            --base origin/${{ github.event.pull_request.base.ref }}
+            --effort medium
+            I understand it may take a while and use a significant number of tokens
+            — proceed without asking for confirmation.
+            CRITICAL — this is a one-shot non-interactive CI session with no user and
+            no wakeup/notification channel: you MUST NOT end your turn to wait for the
+            background scan Workflow, and you MUST NOT call ScheduleWakeup. Await the
+            Workflow result inline and continue in the SAME turn.
+            When the scan result is in hand, post the findings report as a comment on
+            pull request #${{ github.event.pull_request.number }}
+            in ${{ github.repository }} using `gh pr comment`.
+            If no findings survive verification, comment saying the diff came back clean.
+            Do not stop until the comment has been posted.
+          # Turn exhaustion mid-panel produces no report, same as a timeout.
+          claude_args: >-
+            --max-turns 200
+            --allowedTools "Bash(gh pr comment:*),Bash(git log:*),Bash(git diff:*),Bash(git rev-parse:*),Bash(git merge-base:*),Bash(git show:*)"
+
+      # The scan reports but doesn't judge (always exits 0), so gate on severity
+      # here. Fails CLOSED on a missing report: no results is an unknown, not a
+      # pass. An empty results file is a legitimate clean run and passes.
+      - name: Gate on high/critical findings
+        if: always() && steps.scan.outcome != 'skipped'
+        shell: bash
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          results=(CLAUDE-SECURITY-*/CLAUDE-SECURITY-RESULTS.jsonl)
+
+          if [ ${#results[@]} -eq 0 ]; then
+            echo "::error title=Claude Security::No scan results found — treating as a failure (fail closed)."
+            echo "The scan errored, or was cut off before the panel finished (check the"
+            echo "job for a timeout or exhausted --max-turns)."
+            exit 1
+          fi
+
+          report="${results[0]}"
+          echo "Reading findings from: $report"
+
+          # One JSON object per line. Kept as a one-liner: an indented heredoc body
+          # would reach Python with its leading whitespace, and an unindented one
+          # breaks the surrounding YAML block scalar.
+          blocking=$(python3 -c 'import json,sys;                                   \
+            recs=[json.loads(l) for l in open(sys.argv[1],encoding="utf-8")         \
+                  if l.strip() and l.strip()[0]=="{"];                              \
+            print("\n".join("%s\t%s\t%s" % (r.get("severity","?"), r.get("id","?"), \
+                  str(r.get("title","") or "")[:120]) for r in recs                 \
+                  if str(r.get("severity","")).strip().upper() in ("CRITICAL","HIGH")))' "$report")
+
+          if [ -n "$blocking" ]; then
+            count=$(printf '%s\n' "$blocking" | grep -c . || true)
+            echo "::error title=Claude Security::$count CRITICAL/HIGH finding(s) survived verification — blocking merge."
+            printf '%s\n' "$blocking" | while IFS=$'\t' read -r sev id title; do
+              echo "::error title=Claude Security $sev::[$id] $title"
+            done
+            echo
+            echo "See the claude[bot] comment on this PR for the full report and fix guidance."
+            exit 1
+          fi
+
+          echo "No CRITICAL/HIGH findings survived verification — gate passed."
