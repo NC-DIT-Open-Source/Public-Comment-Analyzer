@@ -1,5 +1,16 @@
-# Claude Security — PR-diff scan. Auth via org var CLAUDE_AUTH_MODE
-# (oauth | bedrock) + the matching org secret.
+# Claude Security — dual-auth PR-diff scan (Bedrock OR org OAuth).
+#
+# Auth mode is chosen by the org/repo Actions VARIABLE `CLAUDE_AUTH_MODE`:
+#   - "bedrock" : keyless OIDC -> AWS role -> Amazon Bedrock (no token secret;
+#                 bills to the org AWS/Bedrock account OAIP already uses)
+#   - "oauth"   : org-level secret CLAUDE_CODE_OAUTH_TOKEN (keeps the claude[bot]
+#                 identity; usage counts against that subscription)
+#
+# Secrets/vars to set ONCE at the org level (Settings -> Secrets and variables):
+#   Variable  CLAUDE_AUTH_MODE          = bedrock | oauth
+#   Secret    AWS_ROLE_TO_ASSUME        = arn:aws:iam::<acct>:role/<gha-bedrock-role>   (bedrock mode)
+#   Variable  AWS_REGION                = us-east-1 (or your Bedrock region)            (bedrock mode)
+#   Secret    CLAUDE_CODE_OAUTH_TOKEN   = sk-ant-oat...                                 (oauth mode)
 #
 # Committed here rather than inherited: the org's required-workflow ruleset is
 # sourced from the INTERNAL .github repo, and a required workflow only runs in
@@ -15,7 +26,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
+  id-token: write # OIDC — needed for the Claude App token AND for AWS in bedrock mode
 
 concurrency:
   group: claude-security-${{ github.event.pull_request.number }}
@@ -30,13 +41,11 @@ jobs:
     # in minutes.
     timeout-minutes: 120
     steps:
-      # Two cases cannot authenticate, because GitHub withholds Actions secrets
-      # from both: fork PRs and bot-initiated runs. Skip and succeed, so the
-      # required check stays satisfiable and PRs remain mergeable.
-      #
-      # Do NOT switch to `pull_request_target` to "fix" forks: it runs with
-      # secrets while checking out untrusted code, handing an attacker-controlled
-      # diff to an agent holding the org token. Fork PRs get human review instead.
+      # GitHub gives bot-initiated `pull_request` runs the Dependabot secret
+      # store, not Actions secrets, so the token is absent and the scan cannot
+      # authenticate — `allowed_bots` cannot change that. Skip and succeed, so
+      # the required check stays satisfiable and dependency PRs stay mergeable.
+      # Keyed on triggering actor: a human commit on a bot branch still scans.
       - name: Decide whether to scan
         id: guard
         env:
@@ -61,13 +70,16 @@ jobs:
           case "$ACTOR" in
             *"[bot]")
               echo "scan=false" >> "$GITHUB_OUTPUT"
-              echo "Skipping: bot actor '$ACTOR' has no access to Actions secrets."
+              echo "Skipping scan: '$ACTOR' is a bot actor with no access to Actions secrets."
               {
-                echo "### Claude Security — skipped (bot PR)"
+                echo "### Claude Security — skipped"
                 echo
-                echo "\`$ACTOR\` is a bot; Actions secrets are withheld from bot runs."
-                echo "Dependency bumps are covered by Dependabot advisories and CodeQL."
-                echo "A human commit on this branch runs the scan normally."
+                echo "This PR was triggered by \`$ACTOR\`. GitHub withholds Actions secrets"
+                echo "from bot-initiated \`pull_request\` runs, so the scan cannot"
+                echo "authenticate. Dependency-update diffs are covered by Dependabot"
+                echo "advisories and CodeQL instead."
+                echo
+                echo "Pushing a human commit to this branch will run the scan normally."
               } >> "$GITHUB_STEP_SUMMARY"
               ;;
             *)
@@ -102,7 +114,7 @@ jobs:
               echo "Auth mode: bedrock."
               ;;
             "")
-              echo "::error title=Claude Security::Org variable CLAUDE_AUTH_MODE is unset. Set it to 'oauth' or 'bedrock'."
+              echo "::error title=Claude Security::Org Actions variable CLAUDE_AUTH_MODE is unset. Set it to 'oauth' or 'bedrock' at the organization level."
               exit 1
               ;;
             *)
@@ -122,6 +134,7 @@ jobs:
         if: steps.guard.outputs.scan == 'true'
         run: git fetch --no-tags origin +refs/heads/${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
 
+      # --- Bedrock mode only: exchange the GitHub OIDC token for AWS creds ---
       - name: Configure AWS credentials (Bedrock)
         if: steps.guard.outputs.scan == 'true' && vars.CLAUDE_AUTH_MODE == 'bedrock'
         uses: aws-actions/configure-aws-credentials@v4
@@ -133,15 +146,21 @@ jobs:
         id: scan
         if: steps.guard.outputs.scan == 'true'
         uses: anthropics/claude-code-action@v1
-        env:
-          GH_TOKEN: ${{ github.token }} # for `gh pr comment`
         with:
+          # Bedrock mode: no token; use_bedrock reads the AWS creds from the step above.
           use_bedrock: ${{ vars.CLAUDE_AUTH_MODE == 'bedrock' && 'true' || '' }}
+          # OAuth mode: the subscription token (ignored/empty in bedrock mode).
           claude_code_oauth_token: ${{ vars.CLAUDE_AUTH_MODE == 'oauth' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
 
           plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
           plugins: "claude-security@claude-plugins-official"
           show_full_output: "true"
+          # No GH_TOKEN and no posting from inside this step: the Claude App
+          # installation token minted at job start expires after ~1h, so on a long
+          # scan every `gh` call 401s and the findings are silently lost (a 97m run
+          # produced 4 MEDIUM findings that never reached the PR). The `report` job
+          # below posts instead, on a fresh token. So this prompt must NOT ask for a
+          # comment — it writes the report to disk and stops.
           prompt: >-
             /claude-security:claude-security scan changes
             --base origin/${{ github.event.pull_request.base.ref }}
@@ -152,26 +171,41 @@ jobs:
             no wakeup/notification channel: you MUST NOT end your turn to wait for the
             background scan Workflow, and you MUST NOT call ScheduleWakeup. Await the
             Workflow result inline and continue in the SAME turn.
-            When the scan result is in hand, post the findings report as a comment on
-            pull request #${{ github.event.pull_request.number }}
-            in ${{ github.repository }} using `gh pr comment`.
-            If no findings survive verification, comment saying the diff came back clean.
-            Do not stop until the comment has been posted.
+            Do NOT attempt to post a comment, and do not use `gh` at all — you have no
+            valid GitHub credential and a separate job handles reporting. When the scan
+            finishes, confirm the CLAUDE-SECURITY-<timestamp>/ directory exists with
+            its RESULTS.md and RESULTS.jsonl, then stop.
           # Turn exhaustion mid-panel produces no report, same as a timeout.
+          # `gh` is deliberately absent from the grant now that the report job owns
+          # posting — the scan reads untrusted diff content, so the narrower the
+          # better.
           claude_args: >-
             --max-turns 200
-            --allowedTools "Bash(gh pr comment:*),Bash(git log:*),Bash(git diff:*),Bash(git rev-parse:*),Bash(git merge-base:*),Bash(git show:*)"
+            --allowedTools "Bash(git log:*),Bash(git diff:*),Bash(git rev-parse:*),Bash(git merge-base:*),Bash(git show:*)"
+
+      # Hand the report to the `report` job. Artifacts are the only channel that
+      # survives the job boundary, and the boundary is the point: a new job gets a
+      # freshly minted App token.
+      - name: Upload the report for the report job
+        if: always() && steps.guard.outputs.scan == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-security-report-${{ github.event.pull_request.number }}
+          path: CLAUDE-SECURITY-*/
+          retention-days: 7
+          if-no-files-found: ignore
 
       # The scan reports but doesn't judge (always exits 0), so gate on severity
-      # here. Fails CLOSED on a missing report: no results is an unknown, not a
-      # pass. An empty results file is a legitimate clean run and passes.
+      # here. MEDIUM/LOW stay advisory. Fails CLOSED on a missing report: no
+      # results is an unknown, not a pass. An empty file is a clean run, and
+      # passes.
       #
-      # `steps.scan.outcome` is not sufficient to detect "didn't run": the action
-      # self-skips on its workflow-validation check (the copy on the default
-      # branch must match byte-for-byte) and still reports `success`. It sets no
-      # `execution_file` in that case, so that output is what distinguishes a real
-      # run from a no-op — without it, a validation skip would fail closed and
-      # block every PR that edits this workflow.
+      # `steps.scan.outcome` can't detect "didn't run": the action self-skips on
+      # its workflow-validation check (the copy on the default branch must match
+      # byte-for-byte) and still reports `success`. It sets no `execution_file`
+      # then, so that output is what separates a real run from a no-op —
+      # otherwise a validation skip fails closed and blocks every PR that edits
+      # this workflow.
       - name: Gate on high/critical findings
         if: always() && steps.scan.outcome != 'skipped'
         shell: bash
@@ -190,7 +224,6 @@ jobs:
               echo
               echo "Workflow validation skip: the action requires this file to match the"
               echo "copy on the default branch. **This diff was not scanned.**"
-              echo "Merging this PR makes subsequent PRs scan normally."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -224,8 +257,122 @@ jobs:
               echo "::error title=Claude Security $sev::[$id] $title"
             done
             echo
-            echo "See the claude[bot] comment on this PR for the full report and fix guidance."
+            echo "See the claude[bot] comment on this PR for the full report, impact, and fix guidance."
             exit 1
           fi
 
           echo "No CRITICAL/HIGH findings survived verification — gate passed."
+
+  # Post the findings as claude[bot], on a token minted after the scan finished.
+  #
+  # Why a separate job: the App installation token is minted once at job start and
+  # lives ~1h. A long scan outlives it, so anything posted from inside the scan job
+  # 401s — which is how a 97-minute run's 4 MEDIUM findings ended up visible only in
+  # the raw log. A new job re-runs the OIDC exchange and gets a fresh token, so the
+  # claude[bot] identity is preserved no matter how long the scan took.
+  #
+  # `needs` without `if: success()` — this must run even when the gate failed, since
+  # a blocked PR is exactly when the report matters most.
+  report:
+    needs: scan
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write # re-mint the Claude App token
+    steps:
+      - name: Download the scan report
+        id: dl
+        uses: actions/download-artifact@v4
+        continue-on-error: true # no artifact => nothing was scanned; handled below
+        with:
+          name: claude-security-report-${{ github.event.pull_request.number }}
+          path: report
+
+      - name: Check whether there is a report to post
+        id: check
+        shell: bash
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+
+          # Test each candidate with -s rather than trusting the glob: nullglob only
+          # drops patterns that contain a wildcard, so the literal first path would
+          # survive as a phantom entry and we'd try to post a file that isn't there.
+          # The artifact may be flat or keep its CLAUDE-SECURITY-<ts>/ directory
+          # depending on how upload-artifact rooted it, so accept both shapes.
+          found=""
+          for c in report/CLAUDE-SECURITY-RESULTS.md report/*/CLAUDE-SECURITY-RESULTS.md; do
+            if [ -s "$c" ]; then found="$c"; break; fi
+          done
+
+          if [ -z "$found" ]; then
+            echo "post=false" >> "$GITHUB_OUTPUT"
+            echo "No report to post — the scan was skipped, or produced no readable report."
+            exit 0
+          fi
+
+          echo "post=true" >> "$GITHUB_OUTPUT"
+          echo "report_md=$found" >> "$GITHUB_OUTPUT"
+          echo "Found report: $found ($(wc -c < "$found") bytes)"
+
+      # The action mints a fresh App token and exposes it as an output. Claude is
+      # given no tools and a trivial prompt: this invocation exists for the token,
+      # not for its reasoning — the report is already written.
+      - name: Mint a fresh Claude App token
+        id: applet
+        if: steps.check.outputs.post == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ vars.CLAUDE_AUTH_MODE == 'oauth' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          use_bedrock: ${{ vars.CLAUDE_AUTH_MODE == 'bedrock' && 'true' || '' }}
+          prompt: "Reply with exactly: ok"
+          claude_args: '--max-turns 1 --allowedTools ""'
+
+      - name: Post the findings as claude[bot]
+        if: steps.check.outputs.post == 'true'
+        shell: bash
+        env:
+          # Prefer the freshly-minted App token so the comment is attributed to
+          # claude[bot]. Fall back to the job token only so findings are never lost
+          # outright — that posts as github-actions[bot], which is worse but visible.
+          APP_TOKEN: ${{ steps.applet.outputs.github_token }}
+          JOB_TOKEN: ${{ github.token }}
+          REPORT_MD: ${{ steps.check.outputs.report_md }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          # GitHub caps a comment at 65536 chars; leave room for the header.
+          body=/tmp/comment.md
+          {
+            echo "## Claude Security — scan results"
+            echo
+            head -c 60000 "$REPORT_MD"
+            if [ "$(wc -c < "$REPORT_MD")" -gt 60000 ]; then
+              echo
+              echo "_[report truncated — full version in this run's \`claude-security-report\` artifact]_"
+            fi
+          } > "$body"
+
+          post() {
+            GH_TOKEN="$1" gh pr comment "$PR" --repo "$REPO" --body-file "$body" 2>&1
+          }
+
+          if [ -n "${APP_TOKEN:-}" ] && post "$APP_TOKEN"; then
+            echo "Posted as claude[bot]."
+            exit 0
+          fi
+
+          echo "::warning title=Claude Security::App token unavailable or rejected; posting as github-actions[bot] so findings are not lost."
+          if post "$JOB_TOKEN"; then
+            echo "Posted as github-actions[bot]."
+            exit 0
+          fi
+
+          echo "::error title=Claude Security::Could not post the findings comment with either token."
+          echo "The report is still attached to this run as the 'claude-security-report' artifact."
+          exit 1
