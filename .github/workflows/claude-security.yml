@@ -283,6 +283,15 @@ jobs:
       pull-requests: write
       id-token: write # re-mint the Claude App token
     steps:
+      # The action runs `git fetch origin main` during its own setup, so it needs a
+      # real git repo in the workspace even when it is only being used to mint a
+      # token. Without this the mint step dies with `exit code 128`. Shallow — no
+      # history is needed here.
+      - name: Checkout (the action's setup requires a git repo)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
       - name: Download the scan report
         id: dl
         uses: actions/download-artifact@v4
@@ -321,9 +330,13 @@ jobs:
       # The action mints a fresh App token and exposes it as an output. Claude is
       # given no tools and a trivial prompt: this invocation exists for the token,
       # not for its reasoning — the report is already written.
+      # `continue-on-error` so a mint failure degrades to the job-token fallback in
+      # the next step instead of skipping it. Losing claude[bot] attribution is bad;
+      # losing the findings entirely is worse.
       - name: Mint a fresh Claude App token
         id: applet
         if: steps.check.outputs.post == 'true'
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ vars.CLAUDE_AUTH_MODE == 'oauth' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
