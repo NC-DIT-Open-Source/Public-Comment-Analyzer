@@ -188,7 +188,7 @@ jobs:
       # freshly minted App token.
       - name: Upload the report for the report job
         if: always() && steps.guard.outputs.scan == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claude-security-report-${{ github.event.pull_request.number }}
           path: CLAUDE-SECURITY-*/
