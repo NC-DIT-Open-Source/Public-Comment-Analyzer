@@ -1,14 +1,14 @@
 <app-access-gate *ngIf="!(authService.authenticated$ | async)"></app-access-gate>
 
 <div class="app-container" *ngIf="authService.authenticated$ | async">
-  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <a class="skip-link" href="#main-content" (click)="mainContent.focus(); $event.preventDefault()">Skip to main content</a>
   <header class="app-header">
     <div class="header-content">
       <img src="assets/white-dit-logo.png" alt="NC DIT Logo" class="logo">
       <h1>Public Comment Analyzer</h1>
     </div>
   </header>
-  <main class="app-content" id="main-content" tabindex="-1">
+  <main #mainContent class="app-content" id="main-content" tabindex="-1">
     <p class="analysis-notice" role="status" *ngIf="demoMode === true">
       <strong>Demo mode:</strong> sample results only. No AI analysis is performed.
     </p>

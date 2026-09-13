@@ -9,6 +9,7 @@ from __future__ import annotations
 import concurrent.futures
 import html
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -18,6 +19,7 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Any, TypedDict
 
 SUMMARY_CHUNK_SIZE = 150
+logger = logging.getLogger(__name__)
 
 SYSTEM_POLICY = (
     "You are a public-comment analysis decision aid. Your output is a draft for human review. "
@@ -256,6 +258,19 @@ def _reserve(prompt: str, max_tokens: int) -> None:
             raise InferenceLimitError("The deployment's inference budget would be exceeded.")
         db.execute("UPDATE budget SET calls=calls+1, reserved_nano_usd=reserved_nano_usd+? WHERE id=1", (nano,))
         db.commit()
+        # The transaction's old/new snapshots make each threshold a single
+        # event even with concurrent requests. Log only committed reservations,
+        # never prompts, identity, endpoints or estimates of actual invoices.
+        limits = [('calls', calls, calls + 1, max_calls)]
+        if cap is not None:
+            limits.append(('reserved_cost', spent, spent + nano, cap * Decimal(1000000000)))
+        for resource, previous, current, limit in limits:
+            for threshold in (80, 90, 100):
+                if previous * 100 < limit * threshold <= current * 100:
+                    logger.warning(
+                        'inference_budget_threshold scope=deployment resource=%s threshold_percent=%s basis=application_reservations',
+                        resource, threshold,
+                    )
     finally:
         db.close()
 

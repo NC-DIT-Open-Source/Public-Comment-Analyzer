@@ -63,6 +63,7 @@ jobs:
       # The built image also contains OS packages, outside npm and pip audits.
       # Keep detailed findings only in runner temp storage, never public artifacts.
       - name: Check the image for fixable high and critical vulnerabilities
+        id: image_scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         timeout-minutes: 8
         with:
@@ -81,6 +82,29 @@ jobs:
           cache-dir: ${{ runner.temp }}/trivy-cache
         env:
           TRIVY_DISABLE_TELEMETRY: 'true'
+      - name: Summarize image scan status without disclosing findings
+        if: always() && steps.image_scan.outcome != 'skipped'
+        run: |
+          python3 - <<'PY'
+          from collections import Counter
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path(os.environ['RUNNER_TEMP']) / 'container-vulnerabilities.json'
+          if not report.is_file():
+              raise SystemExit('The image scanner did not produce a report; inspect its setup or execution failure.')
+          counts = Counter()
+          for result in json.loads(report.read_text()).get('Results', []):
+              category = 'OS' if result.get('Class') == 'os-pkgs' else 'Application'
+              for finding in result.get('Vulnerabilities', []):
+                  severity = finding.get('Severity')
+                  if severity in {'HIGH', 'CRITICAL'} and finding.get('FixedVersion'):
+                      counts[(category, severity)] += 1
+          for category in ('OS', 'Application'):
+              for severity in ('HIGH', 'CRITICAL'):
+                  print(f'{category} fixable {severity} findings: {counts[(category, severity)]}')
+          PY
       - name: Start locked-down offline demo
         run: |
           mkdir -m 700 .secrets

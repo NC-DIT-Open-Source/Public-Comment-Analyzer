@@ -18,7 +18,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254 AS runtime
 WORKDIR /app
-RUN groupadd --gid 10001 app \
+# Apply signed distribution updates published after the pinned base was built.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 app \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app \
     && install -d -o app -g app -m 0700 /data
 COPY --from=dependencies /app/.venv /app/.venv

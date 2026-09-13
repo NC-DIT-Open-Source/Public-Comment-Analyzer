@@ -364,3 +364,45 @@ def test_shutdown_pause_stops_new_calls_without_resetting_budget(monkeypatch):
         inference.resume_after_startup()
     assert 'Demo mode' in inference.invoke_text('Allowed after restart', role='summary')
     assert inference.budget_status()['calls'] == 2
+
+
+def test_call_budget_threshold_logs_once_under_concurrency(monkeypatch, caplog):
+    monkeypatch.setenv('LLM_MAX_CALLS', '20')
+    caplog.set_level('WARNING', logger='inference')
+    def reserve(_):
+        try:
+            inference._reserve('PRIVATE COMMENT: never log this', 10)
+        except inference.InferenceLimitError:
+            pass
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(reserve, range(30)))
+    events = [record.getMessage() for record in caplog.records
+              if record.getMessage().startswith('inference_budget_threshold')]
+    assert len(events) == 3
+    for threshold in (80, 90, 100):
+        assert sum(f'resource=calls threshold_percent={threshold} ' in event for event in events) == 1
+    assert 'PRIVATE COMMENT' not in caplog.text
+    assert all('scope=deployment' in event and 'basis=application_reservations' in event for event in events)
+    assert inference.budget_status()['calls'] == 20
+
+
+def test_cost_budget_thresholds_use_persistent_reservations_and_do_not_repeat(monkeypatch, caplog):
+    from decimal import Decimal
+    real_configuration(monkeypatch)
+    monkeypatch.setenv('LLM_BUDGET_USD', '.1')
+    monkeypatch.setenv('LLM_API_KEY', 'SYNTHETIC_SECRET_MUST_NOT_LOG')
+    monkeypatch.setattr(inference, 'estimate_call_cost', lambda *_: Decimal('.005'))
+    caplog.set_level('WARNING', logger='inference')
+    for _ in range(20):
+        inference._reserve('PRIVATE RESPONSE MUST NOT LOG', 10)
+    for _ in range(3):
+        with pytest.raises(inference.InferenceLimitError, match='budget'):
+            inference._reserve('PRIVATE RESPONSE MUST NOT LOG', 10)
+    events = [record.getMessage() for record in caplog.records
+              if record.getMessage().startswith('inference_budget_threshold')]
+    assert len(events) == 3
+    for threshold in (80, 90, 100):
+        assert sum(f'resource=reserved_cost threshold_percent={threshold} ' in event for event in events) == 1
+    assert 'PRIVATE RESPONSE' not in caplog.text
+    assert 'SYNTHETIC_SECRET' not in caplog.text
+    assert inference.budget_status() == {'calls': 20, 'reservedUsd': .1}

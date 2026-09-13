@@ -48,4 +48,16 @@ describe('AppComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('h1')?.textContent).toContain('Public Comment Analyzer');
   });
+
+  it('skips to content without navigating away from the current job', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const main = compiled.querySelector('main')!;
+    spyOn(main, 'focus');
+    const event = new MouseEvent('click', {bubbles: true, cancelable: true});
+    compiled.querySelector('.skip-link')!.dispatchEvent(event);
+    expect(main.focus).toHaveBeenCalled();
+    expect(event.defaultPrevented).toBeTrue();
+  });
 });
