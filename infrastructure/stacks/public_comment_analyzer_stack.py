@@ -491,11 +491,17 @@ class PublicCommentAnalyzerStack(Stack):
                 metrics_enabled=True
             ),
             default_cors_preflight_options=apigateway.CorsOptions(
-                # Fail closed: if no allowed_origin context was supplied, do not
-                # send any CORS headers — mirrors the Lambda handlers, which
-                # also fail closed when ALLOWED_ORIGIN is unset. The deploy
-                # pipeline is expected to always pass --context allowed_origin=...
-                allow_origins=[self.allowed_origin] if self.allowed_origin else [],
+                # Fail closed: if no allowed_origin context was supplied, allow
+                # only an unresolvable placeholder so no real browser origin ever
+                # matches — mirrors the Lambda handlers, which also fail closed
+                # when ALLOWED_ORIGIN is unset. The deploy pipeline is expected
+                # to always pass --context allowed_origin=...
+                #
+                # `.invalid` is reserved by RFC 2606 and can never be a real
+                # origin. An empty list is NOT usable here: aws-cdk-lib >=2.26x
+                # rejects it at synth time ("allowOrigins must contain at least
+                # one origin"), which would break `cdk synth` for contributors.
+                allow_origins=[self.allowed_origin] if self.allowed_origin else ["https://cors-disabled.invalid"],
                 allow_methods=["GET", "POST", "OPTIONS"],
                 allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-Access-Key"]
             ),

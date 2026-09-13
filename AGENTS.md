@@ -26,7 +26,7 @@ This repo is open source. Never commit:
 - Production domain names
 - Password literals or hashes
 
-NC-specific values live in GitHub Actions secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `DOMAIN_NAME`, `CERTIFICATE_ARN`, `ALLOWED_ORIGIN`) and in the operator's local `.env` / `local-env.json` (gitignored). The CDK stack reads them via `--context` flags; missing context falls back to safe defaults (no custom domain, CORS `*` for dev).
+NC-specific values live in GitHub Actions secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `DOMAIN_NAME`, `CERTIFICATE_ARN`, `ALLOWED_ORIGIN`) and in the operator's local `.env` / `local-env.json` (gitignored). The CDK stack reads them via `--context` flags; missing context falls back to safe defaults (no custom domain, and CORS fails closed — API Gateway is synthesized with the unresolvable placeholder origin `https://cors-disabled.invalid`, which no real browser origin can match). Note this is a placeholder rather than an empty list because `aws-cdk-lib` rejects an empty `allowOrigins` at synth time.
 
 If you find a hardcoded NC value while editing code, parameterize it.
 
