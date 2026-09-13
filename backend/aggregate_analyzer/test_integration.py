@@ -21,137 +21,36 @@ class TestAggregateAnalyzerIntegration(unittest.TestCase):
     """Integration tests for aggregate analyzer full workflow."""
     
     def setUp(self):
-        """Set up test fixtures."""
-        # Set environment variables
-        os.environ['DATA_BUCKET'] = 'test-bucket'
-        os.environ['JOBS_TABLE'] = 'test-table'
-        
-        # Reset global clients
-        handler._s3_client = None
-        handler._dynamodb = None
-        handler._bedrock_runtime = None
+        os.environ['ALLOWED_ORIGIN'] = 'http://localhost:4200'
     
-    @patch('handler._get_bedrock_runtime')
-    @patch('handler._get_s3_client')
-    @patch('handler._get_dynamodb')
-    def test_full_aggregate_analysis_workflow(self, mock_get_dynamodb, 
-                                              mock_get_s3, mock_get_bedrock):
-        """Test complete workflow from job retrieval to analysis generation."""
-        # Create sample processed data
-        sample_data = ParsedFile(
-            headers=['comment', 'author', 'sentiment', 'category'],
-            rows=[
-                {'comment': 'I support this proposal', 'author': 'John', 
-                 'sentiment': 'positive', 'category': 'support'},
-                {'comment': 'This is concerning', 'author': 'Jane', 
-                 'sentiment': 'negative', 'category': 'concern'},
-                {'comment': 'I have mixed feelings', 'author': 'Bob', 
-                 'sentiment': 'neutral', 'category': 'mixed'},
-                {'comment': 'Strongly in favor', 'author': 'Alice', 
-                 'sentiment': 'positive', 'category': 'support'},
-                {'comment': 'Strongly opposed', 'author': 'Charlie', 
-                 'sentiment': 'negative', 'category': 'oppose'},
-            ],
-            row_count=5
-        )
-        
-        # Write sample data to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp:
-            temp_file_path = tmp.name
-            writer = FileWriter()
-            writer.write(sample_data.headers, sample_data.rows, temp_file_path, 'csv')
-        
-        # Mock DynamoDB
-        mock_table = Mock()
-        mock_table.get_item.return_value = {
-            'Item': {
-                'jobId': '123e4567-e89b-42d3-a456-426614174000',
-                'status': 'completed',
-                'outputFileKey': 'results/123e4567-e89b-42d3-a456-426614174000/output.csv',
-                'analysisColumns': [
-                    {'name': 'sentiment', 'instructions': 'Analyze sentiment as positive, negative, or neutral'},
-                    {'name': 'category', 'instructions': 'Categorize as support, oppose, concern, or mixed'}
-                ]
-            }
+    @patch('handler.invoke_text_with_retries', return_value='Overall Sentiment Distribution: positive 40%, negative 40%, neutral 20%.')
+    @patch('handler.get_object_store')
+    @patch('handler.get_job_store')
+    def test_full_aggregate_analysis_workflow(self, get_jobs, get_objects, invoke):
+        job_id = '123e4567-e89b-42d3-a456-426614174000'
+        get_jobs.return_value.get.return_value = {
+            'jobId': job_id, 'status': 'completed', 'outputFileKey': f'results/{job_id}/output.csv',
+            'analysisColumns': [{'name': 'sentiment', 'instructions': 'Analyze sentiment'}],
         }
-        mock_dynamodb = Mock()
-        mock_dynamodb.Table.return_value = mock_table
-        mock_get_dynamodb.return_value = mock_dynamodb
-        
-        # Mock S3
-        mock_s3_client = Mock()
-        mock_s3_client.download_file.side_effect = lambda bucket, key, path: \
-            shutil.copy2(temp_file_path, path)
-        mock_s3_client.generate_presigned_url.return_value = 'https://s3.amazonaws.com/presigned-url'
-        mock_get_s3.return_value = mock_s3_client
-        
-        # Mock Bedrock
-        aggregate_analysis_text = """
-Overall Sentiment Distribution:
-- Positive: 2 comments (40%)
-- Negative: 2 comments (40%)
-- Neutral: 1 comment (20%)
-
-Key Themes and Patterns:
-The comments show a polarized response with equal numbers of positive and negative sentiments.
-The main categories are support (40%) and opposition (40%), with some concerns and mixed feelings.
-
-Notable Trends:
-Strong language is used on both sides ("Strongly in favor" vs "Strongly opposed"), 
-indicating passionate opinions on this topic.
-
-Quantitative Summary:
-- Total comments: 5
-- Support category: 40%
-- Oppose category: 20%
-- Concern category: 20%
-- Mixed category: 20%
-"""
-        
-        mock_response = {
-            'body': MagicMock()
-        }
-        mock_response['body'].read.return_value = json.dumps({
-            'content': [{'text': aggregate_analysis_text}]
-        }).encode('utf-8')
-        
-        mock_bedrock_client = Mock()
-        mock_bedrock_client.invoke_model.return_value = mock_response
-        mock_get_bedrock.return_value = mock_bedrock_client
-        
-        # Execute handler
-        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}, 'asyncAnalysis': True}
-        response = handler.lambda_handler(event, None)
-        
-        # Verify response
+        data = 'comment,sentiment\nComment 1,positive\nComment 2,negative\nComment 3,neutral\nComment 4,positive\nComment 5,negative\n'
+        def download(key, destination):
+            with open(destination, 'w') as output:
+                output.write(data)
+        get_objects.return_value.download.side_effect = download
+        get_objects.return_value.signed_url.return_value = 'http://localhost/api/download/test'
+        response = handler.lambda_handler({'pathParameters': {'jobId': job_id}, 'asyncAnalysis': True}, None)
         self.assertEqual(response['statusCode'], 200)
         body = json.loads(response['body'])
-        
-        # Check that response contains expected fields
-        self.assertIn('downloadUrl', body)
-        self.assertIn('aggregateAnalysis', body)
-        self.assertEqual(body['downloadUrl'], 'https://s3.amazonaws.com/presigned-url')
+        self.assertEqual(body['downloadUrl'], 'http://localhost/api/download/test')
         self.assertIn('Overall Sentiment Distribution', body['aggregateAnalysis'])
-        self.assertIn('40%', body['aggregateAnalysis'])
-        
-        # Verify Bedrock was called with Claude Opus model
-        bedrock_call_args = mock_bedrock_client.invoke_model.call_args
-        self.assertEqual(bedrock_call_args[1]['modelId'], handler.CLAUDE_OPUS_MODEL_ID)
-        
-        # Verify prompt contains data summary
-        bedrock_body = json.loads(bedrock_call_args[1]['body'])
-        prompt = bedrock_body['messages'][0]['content']
+        self.assertTrue(body['aggregateAnalysis'].startswith('**AI-generated draft'))
+        prompt = invoke.call_args.args[0]
         self.assertIn('Total Comments: 5', prompt)
-        self.assertIn('sentiment:', prompt)
-        self.assertIn('category:', prompt)
-        
-        # Verify DynamoDB was updated with analysis
-        update_call_args = mock_table.update_item.call_args
-        self.assertEqual(update_call_args[1]['Key'], {'jobId': '123e4567-e89b-42d3-a456-426614174000'})
-        self.assertIn('aggregateAnalysis', update_call_args[1]['UpdateExpression'])
-        
-        # Clean up
-        os.unlink(temp_file_path)
+        self.assertIn('sentiment', prompt)
+        self.assertEqual(invoke.call_args.kwargs['role'], 'summary')
+        saved = get_jobs.return_value.update.call_args
+        self.assertEqual(saved.args[0], job_id)
+        self.assertEqual(saved.args[1]['aggregateAnalysis'], body['aggregateAnalysis'])
     
     def test_data_formatting_with_large_dataset(self):
         """Test data formatting handles large datasets efficiently."""

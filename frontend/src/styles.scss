@@ -71,3 +71,19 @@ body {
 .p-md { padding: $spacing-md; }
 .p-lg { padding: $spacing-lg; }
 .p-xl { padding: $spacing-xl; }
+
+.chart-data {
+  max-width: 100%;
+  overflow-x: auto;
+
+  summary { cursor: pointer; padding: $spacing-sm 0; }
+  table { width: 100%; border-collapse: collapse; }
+  caption { text-align: left; font-weight: 600; padding: $spacing-sm; }
+  th, td { padding: $spacing-sm; text-align: left; border-bottom: 1px solid currentColor; }
+}
+
+:focus-visible { outline: 3px solid $color-primary; outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

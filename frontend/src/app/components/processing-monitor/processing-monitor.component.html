@@ -28,7 +28,7 @@
         <ng-container *ngIf="currentStep === 1">
           <mat-icon class="step-icon spinning" *ngIf="!hasFailed">sync</mat-icon>
           <mat-icon class="step-icon error" *ngIf="hasFailed">error</mat-icon>
-          <p>{{ statusMessage }}</p>
+          <p role="status">{{ statusMessage }}</p>
 
           <div class="progress-section" *ngIf="jobStatus && !hasFailed">
             <mat-progress-bar
@@ -41,7 +41,7 @@
             </div>
           </div>
 
-          <div class="error-message" *ngIf="hasFailed">
+          <div class="error-message" *ngIf="hasFailed" role="alert">
             <p class="error-text">{{ jobStatus?.error || 'An error occurred during processing' }}</p>
           </div>
         </ng-container>
@@ -89,7 +89,7 @@
                 <mat-icon>play_arrow</mat-icon>
                 {{ isConfirmingPreview ? 'Starting full run...' : 'Looks right — process all rows' }}
               </button>
-              <button mat-button routerLink="/upload" [disabled]="isConfirmingPreview">
+              <button mat-button (click)="cancelPreview()" [disabled]="isConfirmingPreview">
                 <mat-icon>arrow_back</mat-icon>
                 Cancel and revise
               </button>
@@ -183,7 +183,7 @@
             </div>
 
             <!-- Dashboard Error -->
-            <div class="dashboard-error" *ngIf="dashboardError">
+            <div class="dashboard-error" *ngIf="dashboardError" role="alert">
               <mat-icon>warning</mat-icon>
               <span>{{ dashboardError }}</span>
             </div>
@@ -195,8 +195,16 @@
                   <h4 class="chart-title">{{ chart.title }}</h4>
                   <p class="chart-description" *ngIf="chart.description">{{ chart.description }}</p>
                   <div class="chart-wrapper">
-                    <canvas #chartCanvas></canvas>
+                    <canvas #chartCanvas role="img" [attr.aria-label]="chart.title + '. Values are available in the chart data table below.'"></canvas>
                   </div>
+                  <details class="chart-data">
+                    <summary>View chart data</summary>
+                    <table>
+                      <caption>{{ chart.title }}</caption>
+                      <thead><tr><th scope="col">Label</th><th scope="col" *ngFor="let dataset of chart.config.data.datasets">{{ dataset.label }}</th></tr></thead>
+                      <tbody><tr *ngFor="let label of chart.config.data.labels; let row = index"><th scope="row">{{ label }}</th><td *ngFor="let dataset of chart.config.data.datasets">{{ dataset.data[row] }}</td></tr></tbody>
+                    </table>
+                  </details>
                 </div>
               </div>
 

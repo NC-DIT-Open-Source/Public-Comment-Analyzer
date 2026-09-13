@@ -7,7 +7,6 @@ import unittest
 import uuid
 from unittest.mock import MagicMock, patch
 
-os.environ['JOBS_TABLE'] = 'test-jobs-table'
 os.environ['ALLOWED_ORIGIN'] = '*'
 
 # Auth shim is loaded from sys.path side-load; bypass auth for tests.
@@ -28,9 +27,8 @@ class TestStatusHandler(unittest.TestCase):
         import importlib
         if 'handler' in sys.modules:
             del sys.modules['handler']
-        with patch('boto3.resource'):
-            import handler  # type: ignore
-            self.handler = handler
+        import handler
+        self.handler = handler
 
     def _patch_auth_to_pass(self):
         return patch.object(self.handler, 'validate_access_key', return_value=True)
@@ -43,7 +41,7 @@ class TestStatusHandler(unittest.TestCase):
     def test_includes_preview_rows_when_status_is_preview_ready(self):
         job_id = str(uuid.uuid4())
         mock_table = MagicMock()
-        mock_table.get_item.return_value = {
+        mock_table.get.return_value = {
             'Item': {
                 'jobId': job_id,
                 'status': 'preview_ready',
@@ -56,7 +54,8 @@ class TestStatusHandler(unittest.TestCase):
                 ]
             }
         }
-        self.handler.table = mock_table
+        mock_table.get.return_value = mock_table.get.return_value['Item']
+        self.handler.get_job_store = lambda: mock_table
 
         with self._patch_auth_to_pass():
             response = self.handler.lambda_handler(_build_event(job_id), None)
@@ -71,7 +70,7 @@ class TestStatusHandler(unittest.TestCase):
     def test_omits_preview_rows_when_status_is_completed(self):
         job_id = str(uuid.uuid4())
         mock_table = MagicMock()
-        mock_table.get_item.return_value = {
+        mock_table.get.return_value = {
             'Item': {
                 'jobId': job_id,
                 'status': 'completed',
@@ -80,7 +79,8 @@ class TestStatusHandler(unittest.TestCase):
                 'errors': []
             }
         }
-        self.handler.table = mock_table
+        mock_table.get.return_value = mock_table.get.return_value['Item']
+        self.handler.get_job_store = lambda: mock_table
 
         with self._patch_auth_to_pass():
             response = self.handler.lambda_handler(_build_event(job_id), None)

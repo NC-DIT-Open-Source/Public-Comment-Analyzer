@@ -1,0 +1,16 @@
+# Paths are on the Docker host. Do not put credential values in this file.
+password_hash_file = "/absolute/path/to/.secrets/access_password_hash"
+
+# Build the image on the Docker host before applying, or supply a pulled image.
+image = "public-comment-analyzer:local"
+
+# Add a public hostname only after configuring your HTTPS reverse proxy.
+allowed_hosts = ["localhost", "127.0.0.1", "[::1]"]
+
+# Non-secret model/provider and processing settings belong in configuration.
+configuration = {
+  LLM_PROVIDER = "demo"
+}
+
+# Optional model credentials: KEY_FILE name => existing host file path.
+secret_files = {}

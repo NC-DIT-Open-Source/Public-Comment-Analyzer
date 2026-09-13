@@ -81,7 +81,7 @@ class TestMultipartParsing:
 class TestLambdaHandler:
     """Test Lambda handler function."""
     
-    @patch('handler.s3_client')
+    @patch('handler.get_object_store')
     @patch('handler.FileParser')
     def test_upload_valid_csv(self, mock_parser_class, mock_s3):
         """Test uploading a valid CSV file."""
@@ -129,12 +129,11 @@ class TestLambdaHandler:
         assert body['filename'] == 'test.csv'
         assert body['fileType'] == 'csv'
         
-        # Verify S3 upload was called
-        mock_s3.put_object.assert_called_once()
-        call_args = mock_s3.put_object.call_args
-        assert call_args[1]['Bucket'] == 'test-bucket'
-        assert 'uploads/' in call_args[1]['Key']
-        assert call_args[1]['Key'].endswith('/input.csv')
+        # Verify object upload was called
+        mock_s3.return_value.put.assert_called_once()
+        call_args = mock_s3.return_value.put.call_args
+        assert 'uploads/' in call_args.args[0]
+        assert call_args.args[0].endswith('/input.csv')
     
     def test_upload_invalid_content_type(self):
         """Test upload with invalid content type."""
@@ -152,7 +151,7 @@ class TestLambdaHandler:
         body = json.loads(response['body'])
         assert body['error']['code'] == 'INVALID_CONTENT_TYPE'
     
-    @patch('handler.s3_client')
+    @patch('handler.get_object_store')
     @patch('handler.FileParser')
     def test_upload_invalid_file_format(self, mock_parser_class, mock_s3):
         """Test uploading a file with invalid format."""
@@ -185,7 +184,7 @@ class TestLambdaHandler:
         assert body['error']['code'] == 'INVALID_FILE_FORMAT'
         assert 'CSV or XLSX' in body['error']['message']
     
-    @patch('handler.s3_client')
+    @patch('handler.get_object_store')
     @patch('handler.FileParser')
     def test_upload_xlsx_file(self, mock_parser_class, mock_s3):
         """Test uploading a valid XLSX file."""
@@ -230,13 +229,13 @@ class TestLambdaHandler:
         assert body['rowCount'] == 10
         
         # Verify S3 key ends with .xlsx
-        call_args = mock_s3.put_object.call_args
-        assert call_args[1]['Key'].endswith('/input.xlsx')
+        call_args = mock_s3.return_value.put.call_args
+        assert call_args.args[0].endswith('/input.xlsx')
     
-    @patch('handler.s3_client')
+    @patch('handler.get_object_store')
     @patch('handler.FileParser')
-    def test_s3_upload_failure(self, mock_parser_class, mock_s3):
-        """Test handling S3 upload failure."""
+    def test_object_upload_failure(self, mock_parser_class, mock_s3):
+        """Test handling object upload failure."""
         # Setup mock parser
         mock_parser = MagicMock()
         mock_parser_class.return_value = mock_parser
@@ -245,8 +244,8 @@ class TestLambdaHandler:
         mock_parsed_file.row_count = 1
         mock_parser.parse.return_value = mock_parsed_file
         
-        # Make S3 upload fail
-        mock_s3.put_object.side_effect = Exception('S3 error')
+        # Make object upload fail
+        mock_s3.return_value.put.side_effect = Exception('storage error')
         
         # Create valid multipart request
         boundary = 'boundary123'

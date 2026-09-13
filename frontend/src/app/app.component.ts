@@ -1,4 +1,6 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../environments/environment';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { AuthService } from './services/auth.service';
@@ -14,5 +16,13 @@ import { AccessGateComponent } from './components/access-gate/access-gate.compon
 export class AppComponent {
   title = 'Public Comment Analyzer';
 
-  constructor(public authService: AuthService) {}
+  demoMode: boolean | null = null;
+  configurationUnavailable = false;
+
+  constructor(public authService: AuthService, http: HttpClient, cdr: ChangeDetectorRef) {
+    http.get<{ demoMode: boolean }>(`${environment.apiBaseUrl}/config`).subscribe({
+      next: config => { this.demoMode = config.demoMode; cdr.markForCheck(); },
+      error: () => { this.configurationUnavailable = true; cdr.markForCheck(); }
+    });
+  }
 }

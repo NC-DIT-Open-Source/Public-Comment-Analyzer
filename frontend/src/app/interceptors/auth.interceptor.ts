@@ -1,6 +1,7 @@
 import { HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { tap } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 import { AuthService } from '../services/auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
@@ -9,8 +10,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // truth. The interceptor never reads web storage directly.
   const accessKey = authService.getAccessKey();
 
-  // Don't attach the key to the auth/validate call itself
-  if (accessKey && !req.url.includes('/auth/validate')) {
+  // Credentials only travel to this deployment's API, never arbitrary URLs.
+  const api = new URL(environment.apiBaseUrl + '/', window.location.origin);
+  const target = new URL(req.url, window.location.origin);
+  const protectedApi = target.origin === api.origin && target.pathname.startsWith(api.pathname)
+    && target.pathname !== api.pathname + 'auth/validate' && target.pathname !== api.pathname + 'config';
+  if (accessKey && protectedApi) {
     const cloned = req.clone({
       setHeaders: { 'X-Access-Key': accessKey }
     });

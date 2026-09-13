@@ -1,4 +1,4 @@
-"""Lambda handler for job status checking."""
+"""Request handler for job status checking."""
 
 import json
 import re
@@ -6,21 +6,17 @@ import os
 import logging
 from decimal import Decimal
 
-import boto3
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 
 from auth import validate_access_key, build_unauthorized_response
+from runtime import get_job_store
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(os.environ['JOBS_TABLE'])
 CORS_ORIGIN = os.environ.get('ALLOWED_ORIGIN', '')
-if not CORS_ORIGIN:
-    logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
 
 UUID_PATTERN = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
@@ -38,9 +34,9 @@ def lambda_handler(event, context):
     if not validate_access_key(event):
         return build_unauthorized_response(CORS_ORIGIN)
 
-    job_id = event['pathParameters']['jobId']
+    job_id = (event.get('pathParameters') or {}).get('jobId', '')
 
-    if not UUID_PATTERN.match(job_id):
+    if not isinstance(job_id, str) or not UUID_PATTERN.fullmatch(job_id):
         return {
             'statusCode': 400,
             'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
@@ -48,14 +44,13 @@ def lambda_handler(event, context):
         }
 
     try:
-        response = table.get_item(Key={'jobId': job_id})
-        if 'Item' not in response:
+        item = get_job_store().get(job_id.lower())
+        if not item:
             return {
                 'statusCode': 404,
                 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},
                 'body': json.dumps({'error': {'code': 'JOB_NOT_FOUND', 'message': 'Job not found'}})
             }
-        item = response['Item']
         body = {
             'jobId': item.get('jobId'),
             'status': item.get('status'),
@@ -76,7 +71,7 @@ def lambda_handler(event, context):
             'body': json.dumps(body, default=decimal_default)
         }
     except Exception as e:
-        logger.error(f"Status handler error: {str(e)}")
+        logger.error("Job status could not be read")
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': CORS_ORIGIN},

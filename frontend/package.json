@@ -9,8 +9,8 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:ci": "ng test --watch=false --browsers=ChromeHeadless",
-    "deploy": "npm run build:prod && node deploy.js",
-    "deploy:dry-run": "npm run build:prod && node deploy.js --dry-run",
+    "deploy": "docker compose up --build -d",
+    "deploy:dry-run": "docker compose config --quiet",
     "verify-build": "node verify-build.js",
     "prepare": "cd .. && husky frontend/.husky"
   },

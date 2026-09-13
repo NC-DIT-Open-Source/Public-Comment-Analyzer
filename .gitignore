@@ -101,3 +101,20 @@ scripts/eval_results/
 
 # Kiro internal spec tooling (project-private)
 .kiro/
+
+# Local data, credentials, budgets and infrastructure state
+.data/
+.secrets/
+.env.*
+!.env.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+*.auto.tfvars
+*.tfvars
+*.tfvars.json
+terraform.tfvars
+!terraform.tfvars.example
+test-results/
+playwright-report/

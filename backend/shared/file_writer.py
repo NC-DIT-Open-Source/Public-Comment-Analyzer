@@ -61,22 +61,20 @@ class FileWriter:
             
             with open(output_path, 'w', encoding='utf-8', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=headers, quoting=csv.QUOTE_MINIMAL)
-                writer.writeheader()
+                writer.writerow({header: _escape_formula(header) for header in headers})
                 
                 for row_num, row in enumerate(rows, start=2):  # Start at 2 (after header)
                     try:
                         writer.writerow({k: _escape_formula(v) for k, v in row.items()})
                     except Exception as e:
-                        logger.warning(f"Error writing CSV row {row_num}: {str(e)}")
-                        # Continue with other rows
-                        continue
+                        raise ValueError(f"Cannot export row {row_num}; no rows were silently omitted") from None
         
         except IOError as e:
-            logger.error(f"Failed to write CSV file: {str(e)}")
+            logger.error("CSV export failed")
             raise IOError(f"Cannot write output file: {str(e)}") from e
         
         except Exception as e:
-            logger.error(f"Unexpected error writing CSV: {str(e)}")
+            logger.error("CSV export failed")
             raise
     
     def _write_xlsx(self, headers: List[str], rows: List[Dict[str, str]], 
@@ -99,7 +97,7 @@ class FileWriter:
             worksheet = workbook.active
             
             # Write headers
-            worksheet.append(headers)
+            worksheet.append([_escape_formula(header) for header in headers])
             
             # Write data rows
             for row_num, row in enumerate(rows, start=2):  # Start at 2 (after header)
@@ -109,17 +107,15 @@ class FileWriter:
                     row_values = [_escape_formula(row.get(header, '')) for header in headers]
                     worksheet.append(row_values)
                 except Exception as e:
-                    logger.warning(f"Error writing XLSX row {row_num}: {str(e)}")
-                    # Continue with other rows
-                    continue
+                    raise ValueError(f"Cannot export row {row_num}; no rows were silently omitted") from None
             
             # Save workbook
             workbook.save(output_path)
         
         except IOError as e:
-            logger.error(f"Failed to write XLSX file: {str(e)}")
+            logger.error("Workbook export failed")
             raise IOError(f"Cannot write output file: {str(e)}") from e
         
         except Exception as e:
-            logger.error(f"Unexpected error writing XLSX: {str(e)}")
+            logger.error("Workbook export failed")
             raise

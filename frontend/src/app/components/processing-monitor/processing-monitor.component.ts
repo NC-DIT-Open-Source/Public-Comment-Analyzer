@@ -16,7 +16,7 @@ import { ProcessingService, JobStatus } from '../../services/processing.service'
 import { ResultsService, ResultsResponse } from '../../services/results.service';
 import { DashboardService, ChartDefinition, DashboardResponse } from '../../services/dashboard.service';
 import { Subject, takeUntil } from 'rxjs';
-import { marked } from 'marked';
+import { renderAnalysisMarkdown } from '../../services/analysis-markdown';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -167,6 +167,19 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
     }
   }
 
+  cancelPreview(): void {
+    if (!this.jobId || this.isConfirmingPreview) return;
+    this.isConfirmingPreview = true;
+    this.processingService.cancelJob(this.jobId).subscribe({
+      next: () => { this.router.navigate(['/upload']); },
+      error: () => {
+        this.previewError = 'The preview could not be canceled. Please try again.';
+        this.isConfirmingPreview = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
   confirmPreview(): void {
     if (!this.jobId || this.isConfirmingPreview) return;
     this.isConfirmingPreview = true;
@@ -197,7 +210,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.results = response;
         if (response.aggregateAnalysis) {
-          const result = marked.parse(response.aggregateAnalysis);
+          const result = renderAnalysisMarkdown(response.aggregateAnalysis);
           Promise.resolve(result).then((html: string) => {
             this.renderedAnalysis = this.sanitizer.sanitize(1, html) || '';
             this.isLoadingResults = false;
@@ -205,6 +218,11 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
             this.currentStep = 3; // Now truly complete
             this.cdr.detectChanges();
           });
+        } else if (response.analysisStatus === 'failed') {
+          this.isLoadingResults = false;
+          this.resultsError = 'The summary could not be generated. Your processed file is still available for download.';
+          this.currentStep = 3;
+          this.cdr.detectChanges();
         } else if (response.analysisStatus === 'generating') {
           this.analysisRetryCount++;
           if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
@@ -230,7 +248,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
 
   downloadResults(): void {
     if (this.results?.downloadUrl) {
-      window.open(this.results.downloadUrl, '_blank');
+      window.open(this.results.downloadUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -284,7 +302,7 @@ export class ProcessingMonitorComponent implements OnInit, OnDestroy {
           setTimeout(() => this.renderCharts(), 100);
         };
         if (this.dashboardRawNarrative) {
-          const result = marked.parse(this.dashboardRawNarrative);
+          const result = renderAnalysisMarkdown(this.dashboardRawNarrative);
           Promise.resolve(result).then((html: string) => {
             this.dashboardNarrative = this.sanitizer.sanitize(1, html) || '';
             parseAndRender();

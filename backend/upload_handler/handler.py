@@ -1,4 +1,4 @@
-"""Lambda handler for file upload and validation."""
+"""Request handler for file upload and validation."""
 
 import json
 import os
@@ -9,20 +9,18 @@ import tempfile
 import logging
 import traceback
 from typing import Dict, Any
-import boto3
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Shared modules are provided via Lambda Layer (/opt/python/) at runtime.
+# Shared modules are provided through the shared package.
 # For local testing, fall back to the sibling shared/ directory.
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
 
 from file_parser import FileParser
 from auth import validate_access_key, build_unauthorized_response
-
-s3_client = boto3.client('s3')
+from runtime import get_object_store
 
 # Maximum upload size: 100 MB
 MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
@@ -50,14 +48,8 @@ def _cors_origin() -> str:
     """
     origin = os.environ.get('ALLOWED_ORIGIN')
     if not origin:
-        logger.error("ALLOWED_ORIGIN is not set; CORS will fail closed")
         return ''
     return origin
-
-
-def get_data_bucket():
-    """Get the data bucket name from environment."""
-    return os.environ.get('DATA_BUCKET', '')
 
 
 def parse_multipart_form_data(body: str, content_type: str) -> Dict[str, Any]:
@@ -155,9 +147,9 @@ def get_file_extension(filename: str) -> str:
     return ''
 
 
-# Canonical extensions: S3 keys are always built from this mapping's values,
+# Canonical extensions: object storage keys are always built from this mapping's values,
 # never the user-supplied filename, so user input can't choose the write path
-# (Checkmarx Unrestricted Write S3).
+# (Checkmarx Unrestricted Write object storage).
 CANONICAL_EXTENSIONS = {'csv': 'csv', 'xlsx': 'xlsx', 'xls': 'xls'}
 
 
@@ -196,13 +188,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     
     Args:
         event: API Gateway event with multipart file upload
-        context: Lambda context
+        context: Request context
         
     Returns:
         Response with file metadata or error
     """
     logger.info("=== UPLOAD HANDLER START ===")
-    logger.info(f"Request ID: {getattr(context, 'aws_request_id', 'N/A')}")
 
     # Validate access key
     if not validate_access_key(event):
@@ -251,7 +242,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         except Exception as e:
             # Log the detail; return only a generic message (Information
             # Exposure Through an Error Message).
-            logger.error(f"Error parsing multipart data: {str(e)}")
+            logger.error("Multipart parsing failed")
             return {
                 'statusCode': 400,
                 'headers': {
@@ -324,7 +315,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         # From here on use only the canonical extension (fixed allow-list value),
-        # so the temp-file suffix and S3 key never contain user-controlled text.
+        # so the temp-file suffix and object storage key never contain user-controlled text.
         extension = CANONICAL_EXTENSIONS[extension]
 
         # Generate unique file ID
@@ -362,21 +353,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     })
                 }
             
-            # Store file in S3
+            # Store file in object storage
             s3_key = f'uploads/{file_id}/input.{extension}'
-            bucket = get_data_bucket()
-            logger.info(f"Uploading to S3: {bucket}/{s3_key}")
             
-            s3_client.put_object(
-                Bucket=bucket,
-                Key=s3_key,
-                Body=file_content,
-                ContentType='application/octet-stream',
-                Metadata={
-                    'file-id': file_id
-                }
-            )
-            logger.info("S3 upload complete")
+            get_object_store().put(s3_key, file_content, 'application/octet-stream')
+            logger.info("object storage upload complete")
             
             # Return file metadata
             response_body = {
@@ -408,12 +389,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as e:
         # Log detailed error information
         error_type = type(e).__name__
-        error_message = str(e)
+        error_message = 'The upload could not be processed.'
         
         logger.error("Upload processing failed")
         logger.error(f"Error type: {error_type}")
         logger.error(f"Error message: {error_message}")
-        logger.error("Stack trace:", exc_info=True)
+        logger.error("The upload operation failed")
         
         # Provide user-friendly error message based on error type
         if 'encoding' in error_message.lower() or 'decode' in error_message.lower():

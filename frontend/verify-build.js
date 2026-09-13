@@ -3,7 +3,7 @@
 /**
  * Verification script for build configuration
  * 
- * This script checks that the build configuration is correct for S3/CloudFront deployment
+ * Check the same-origin frontend and portable container build inputs.
  */
 
 const fs = require('fs');
@@ -29,7 +29,7 @@ function checkAngularJson() {
   
   // Check base href
   if (prodConfig.baseHref === '/') {
-    console.log('   ✅ Base href is set to "/" for CloudFront');
+    console.log('   ✅ Base href is set to "/" for same-origin hosting');
   } else {
     console.error(`   ❌ Base href should be "/" but is "${prodConfig.baseHref || 'not set'}"`);
     hasErrors = true;
@@ -81,7 +81,7 @@ function checkEnvironmentFiles() {
   if (envProdContent.includes("apiBaseUrl: '/api'")) {
     console.log('   ✅ Production API base URL is set to relative path "/api"');
   } else {
-    console.error('   ❌ Production API base URL should be "/api" for CloudFront');
+    console.error('   ❌ Production API base URL should be "/api" for same-origin hosting');
     hasErrors = true;
   }
   
@@ -132,19 +132,11 @@ function checkPackageJson() {
 function checkDeploymentScript() {
   console.log('\n📋 Checking deployment script...');
   
-  const deployScriptPath = path.join(__dirname, 'deploy.js');
+  const deployScriptPath = path.join(__dirname, '..', 'compose.yaml');
   if (fs.existsSync(deployScriptPath)) {
-    console.log('   ✅ deploy.js exists');
-    
-    // Check if it's executable
-    try {
-      fs.accessSync(deployScriptPath, fs.constants.X_OK);
-      console.log('   ✅ deploy.js is executable');
-    } catch {
-      console.log('   ℹ️  deploy.js is not executable (will be run via node)');
-    }
+    console.log('   ✅ Portable Compose configuration exists');
   } else {
-    console.error('   ❌ deploy.js not found');
+    console.error('   ❌ compose.yaml not found');
     hasErrors = true;
   }
 }
@@ -164,7 +156,7 @@ if (hasErrors) {
   console.log('✅ Build configuration is correct!');
   console.log('\nYou can now:');
   console.log('  1. Build for production: npm run build:prod');
-  console.log('  2. Deploy to S3/CloudFront: npm run deploy');
+  console.log('  2. Start the configured local container: npm run deploy');
   console.log('  3. Or do a dry run: npm run deploy:dry-run');
   process.exit(0);
 }

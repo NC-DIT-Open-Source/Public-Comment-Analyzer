@@ -1,17 +1,24 @@
 <app-access-gate *ngIf="!(authService.authenticated$ | async)"></app-access-gate>
 
 <div class="app-container" *ngIf="authService.authenticated$ | async">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="app-header">
     <div class="header-content">
       <img src="assets/white-dit-logo.png" alt="NC DIT Logo" class="logo">
       <h1>Public Comment Analyzer</h1>
     </div>
   </header>
-  <main class="app-content">
-    <router-outlet></router-outlet>
+  <main class="app-content" id="main-content" tabindex="-1">
+    <p class="analysis-notice" role="status" *ngIf="demoMode === true">
+      <strong>Demo mode:</strong> sample results only. No AI analysis is performed.
+    </p>
+    <p class="analysis-notice" role="alert" *ngIf="configurationUnavailable">
+      Analysis mode could not be verified. Reload before uploading a file.
+    </p>
+    <router-outlet *ngIf="demoMode !== null"></router-outlet>
   </main>
   <footer class="app-footer">
     <p>Prototype by the Office of AI & Policy</p>
-    <p class="version-info">v0.2.0 | <strong>Do not enter any sensitive data or PII.</strong> This is a prototype unsecured system.</p>
+    <p class="version-info"><strong>AI-generated analysis is a draft.</strong> Review results before using them to make decisions. Only upload data approved for this deployment and model provider.</p>
   </footer>
 </div>

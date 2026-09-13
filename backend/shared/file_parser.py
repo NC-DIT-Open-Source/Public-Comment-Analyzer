@@ -1,6 +1,8 @@
 """File parser module for CSV and XLSX files."""
 
 import csv
+import os
+import zipfile
 from typing import List, Dict
 from dataclasses import dataclass
 import chardet
@@ -9,6 +11,28 @@ import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+MAX_FILE_BYTES = 100 * 1024 * 1024
+MAX_EXPANDED_BYTES = 256 * 1024 * 1024
+MAX_ROWS = 50_000
+MAX_COLUMNS = 1_000
+MAX_CELLS = 2_000_000
+
+
+def _validate_headers(headers):
+    if len(headers) > MAX_COLUMNS:
+        raise ValueError('File exceeds the column limit')
+    if len(set(headers)) != len(headers):
+        raise ValueError('Column names must be unique to preserve all input data')
+
+
+def _validate_archive(file_path):
+    with zipfile.ZipFile(file_path) as archive:
+        entries = archive.infolist()
+        if len(entries) > 10_000 or sum(item.file_size for item in entries) > MAX_EXPANDED_BYTES:
+            raise ValueError('Workbook exceeds the expanded size limit')
+        if any(item.flag_bits & 1 for item in entries):
+            raise ValueError('Encrypted workbooks are not supported')
 
 
 @dataclass
@@ -37,6 +61,10 @@ class FileParser:
             ValueError: If file type is not supported
             FileNotFoundError: If file does not exist
         """
+        if file_type.lower() not in {'csv', 'xlsx', 'xls'}:
+            raise ValueError(f'Unsupported file type: {file_type}')
+        if os.path.getsize(file_path) > MAX_FILE_BYTES:
+            raise ValueError('File exceeds the 100 MB size limit')
         if file_type.lower() == 'csv':
             return self._parse_csv(file_path)
         elif file_type.lower() in ['xlsx', 'xls']:
@@ -55,7 +83,7 @@ class FileParser:
             Detected encoding string (e.g., 'utf-8', 'latin-1')
         """
         with open(file_path, 'rb') as f:
-            raw_data = f.read()
+            raw_data = f.read(1024 * 1024)
             result = chardet.detect(raw_data)
             encoding = result['encoding']
             # Default to utf-8 if detection fails
@@ -102,8 +130,13 @@ class FileParser:
                     
                     if not headers:
                         raise ValueError("CSV file has no headers")
+                    _validate_headers(headers)
                     
-                    for row_num, row in enumerate(reader, start=2):  # Start at 2 (after header)
+                    for row_num, row in enumerate(reader, start=2):
+                        if row_num > MAX_ROWS + 1 or (row_num - 1) * len(headers) > MAX_CELLS:
+                            raise ValueError('File exceeds the row or cell limit')
+                        if None in row:
+                            raise ValueError('A data row has more cells than the header')
                         try:
                             # Convert all values to strings and handle None values
                             row_dict = {key: (str(value) if value is not None else '') 
@@ -156,6 +189,7 @@ class FileParser:
         """
         try:
             # Load workbook and get first worksheet
+            _validate_archive(file_path)
             workbook = load_workbook(filename=file_path, read_only=True, data_only=True)
             
             if not workbook.worksheets:
@@ -164,7 +198,16 @@ class FileParser:
             worksheet = workbook.worksheets[0]
             
             # Get all rows as a list
-            all_rows = list(worksheet.iter_rows(values_only=True))
+            all_rows = []
+            try:
+                for row in worksheet.iter_rows(values_only=True):
+                    if len(all_rows) > MAX_ROWS or len(row) > MAX_COLUMNS:
+                        raise ValueError('Workbook exceeds the row or column limit')
+                    if (len(all_rows) + 1) * len(row) > MAX_CELLS:
+                        raise ValueError('Workbook exceeds the cell limit')
+                    all_rows.append(row)
+            finally:
+                workbook.close()
             
             if not all_rows:
                 workbook.close()
@@ -172,6 +215,7 @@ class FileParser:
             
             # First row is headers
             headers = [str(cell) if cell is not None else '' for cell in all_rows[0]]
+            _validate_headers(headers)
             
             if not any(headers):  # All headers are empty
                 workbook.close()

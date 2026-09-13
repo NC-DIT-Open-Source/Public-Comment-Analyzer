@@ -122,6 +122,17 @@ describe('ResultsViewerComponent', () => {
     }));
   });
 
+  it('keeps downloads available and stops polling after summary failure', fakeAsync(() => {
+    mockResultsService.getResults.and.returnValue(of({downloadUrl: '/api/download?test', aggregateAnalysis: null, analysisStatus: 'failed'}));
+    component.jobId = 'test-job';
+    component.loadResults();
+    tick(10000);
+    expect(mockResultsService.getResults).toHaveBeenCalledTimes(1);
+    expect(component.isLoading).toBeFalse();
+    expect(component.results?.downloadUrl).toBe('/api/download?test');
+    expect(component.error).toContain('still available for download');
+  }));
+
   describe('Download File', () => {
     it('should open download URL in new tab', () => {
       spyOn(window, 'open');
@@ -132,7 +143,7 @@ describe('ResultsViewerComponent', () => {
 
       component.downloadFile();
 
-      expect(window.open).toHaveBeenCalledWith('https://example.com/file.csv', '_blank');
+      expect(window.open).toHaveBeenCalledWith('https://example.com/file.csv', '_blank', 'noopener,noreferrer');
     });
 
     it('should not download if no results', () => {
