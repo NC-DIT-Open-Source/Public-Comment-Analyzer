@@ -68,6 +68,13 @@ def _upload(client, rows=3, extension="csv"):
     return response.json()
 
 
+def test_demo_labels_use_the_same_normalized_provider_as_inference(client, monkeypatch):
+    monkeypatch.setenv('LLM_PROVIDER', ' demo ')
+    from backend.row_processor.handler import _demo_notice_column
+    assert client.get('/api/config').json() == {'demoMode': True}
+    assert _demo_notice_column(['comment'], []) == '_analysis_notice'
+
+
 def _start(client, file_id, categorized=False):
     col = {"name": "Finding", "type": "open_text", "instructions": "Summarize the comment"}
     if categorized:

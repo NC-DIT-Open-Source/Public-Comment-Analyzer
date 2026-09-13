@@ -978,7 +978,7 @@ def _sanitize_for_prompt(text: str) -> str:
 
 
 def _demo_notice_column(original_headers, analysis_columns):
-    if os.environ.get('LLM_PROVIDER', '').lower() != 'demo':
+    if os.environ.get('LLM_PROVIDER', '').strip() != 'demo':
         return None
     used = {str(name).casefold() for name in original_headers}
     used.update(col['name'].casefold() for col in analysis_columns)

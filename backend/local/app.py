@@ -204,7 +204,7 @@ def create_app(*, start_worker: bool = True):
 
     @app.get("/api/config")
     async def public_config():
-        return {"demoMode": os.environ.get("LLM_PROVIDER", "").lower() == "demo"}
+        return {"demoMode": os.environ.get("LLM_PROVIDER", "").strip() == "demo"}
 
     @app.get("/api/download")
     async def download(key: str, expires: int, signature: str):
