@@ -81,3 +81,7 @@ These limits survive restart in `APP_DATA_DIR`. Deleting the ledger resets the g
 For the local setup, create `.data/STOP_LLM` to stop new requests. In Compose, use `docker compose exec app touch /data/STOP_LLM`. Calls already submitted may finish. Inspect failed jobs and provider billing before removing the switch or starting replacement work.
 
 File parsing also bounds expanded XLSX content to 256 MiB, 50,000 data rows, 1,000 columns and 2,000,000 cells. Duplicate headers and analysis names that would overwrite source columns are rejected so data is not silently lost. Original spreadsheet values and headers retain formula neutralization when exported.
+
+Generated-result readback permits bounded analysis overhead: 1,022 columns, 3,100,000 cells, a 256 MiB file and 512 MiB expanded workbook. Exact export schemas preserve protected header names in summaries and charts; ambiguous escaped names are rejected before inference. Outputs beyond these bounds require smaller batches.
+
+Long open-text results use size-aware summary chunks and at most four reduction rounds. This can require more calls than the initial row-count estimate; every call still uses the shared budget. If a summary cannot fit or the budget runs out, the completed row download remains available and the summary failure is shown explicitly.

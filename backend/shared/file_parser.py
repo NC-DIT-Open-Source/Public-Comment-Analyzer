@@ -17,19 +17,24 @@ MAX_EXPANDED_BYTES = 256 * 1024 * 1024
 MAX_ROWS = 50_000
 MAX_COLUMNS = 1_000
 MAX_CELLS = 2_000_000
+MAX_GENERATED_FILE_BYTES = 256 * 1024 * 1024
+MAX_GENERATED_EXPANDED_BYTES = 512 * 1024 * 1024
+MAX_GENERATED_COLUMNS = 1_022
+MAX_GENERATED_CELLS = 3_100_000
 
 
-def _validate_headers(headers):
-    if len(headers) > MAX_COLUMNS:
+def _validate_headers(headers, max_columns=None):
+    if len(headers) > (MAX_COLUMNS if max_columns is None else max_columns):
         raise ValueError('File exceeds the column limit')
     if len(set(headers)) != len(headers):
         raise ValueError('Column names must be unique to preserve all input data')
 
 
-def _validate_archive(file_path):
+def _validate_archive(file_path, max_expanded_bytes=None):
     with zipfile.ZipFile(file_path) as archive:
         entries = archive.infolist()
-        if len(entries) > 10_000 or sum(item.file_size for item in entries) > MAX_EXPANDED_BYTES:
+        limit = MAX_EXPANDED_BYTES if max_expanded_bytes is None else max_expanded_bytes
+        if len(entries) > 10_000 or sum(item.file_size for item in entries) > limit:
             raise ValueError('Workbook exceeds the expanded size limit')
         if any(item.flag_bits & 1 for item in entries):
             raise ValueError('Encrypted workbooks are not supported')
@@ -46,7 +51,8 @@ class ParsedFile:
 class FileParser:
     """Parser for CSV and XLSX files."""
     
-    def parse(self, file_path: str, file_type: str) -> ParsedFile:
+    def parse(self, file_path: str, file_type: str, *, generated: bool = False,
+              original_headers: List[str] | None = None) -> ParsedFile:
         """
         Parse a CSV or XLSX file.
         
@@ -63,14 +69,33 @@ class FileParser:
         """
         if file_type.lower() not in {'csv', 'xlsx', 'xls'}:
             raise ValueError(f'Unsupported file type: {file_type}')
-        if os.path.getsize(file_path) > MAX_FILE_BYTES:
-            raise ValueError('File exceeds the 100 MB size limit')
+        max_bytes = MAX_GENERATED_FILE_BYTES if generated else MAX_FILE_BYTES
+        max_columns = MAX_GENERATED_COLUMNS if generated else MAX_COLUMNS
+        max_cells = MAX_GENERATED_CELLS if generated else MAX_CELLS
+        if os.path.getsize(file_path) > max_bytes:
+            raise ValueError('File exceeds the generated result size limit' if generated else 'File exceeds the 100 MB size limit')
         if file_type.lower() == 'csv':
-            return self._parse_csv(file_path)
+            parsed = self._parse_csv(file_path, max_columns, max_cells)
         elif file_type.lower() in ['xlsx', 'xls']:
-            return self._parse_xlsx(file_path)
+            expanded = MAX_GENERATED_EXPANDED_BYTES if generated else MAX_EXPANDED_BYTES
+            parsed = self._parse_xlsx(file_path, max_columns, max_cells, expanded)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
+        if generated and original_headers is not None:
+            # Only a job's exact, persisted export schema may undo header
+            # protection. Never guess by stripping quotes from uploaded data.
+            if __package__:
+                from .file_writer import export_headers
+            else:
+                from file_writer import export_headers
+            escaped = export_headers(original_headers)
+            if parsed.headers != escaped:
+                raise ValueError('Generated result headers do not match the saved job schema')
+            pairs = list(zip(original_headers, escaped))
+            for index, row in enumerate(parsed.rows):
+                parsed.rows[index] = {name: row[safe_name] for name, safe_name in pairs}
+            parsed.headers = list(original_headers)
+        return parsed
     
     def _detect_encoding(self, file_path: str) -> str:
         """
@@ -89,7 +114,7 @@ class FileParser:
             # Default to utf-8 if detection fails
             return encoding if encoding else 'utf-8'
     
-    def _parse_csv(self, file_path: str) -> ParsedFile:
+    def _parse_csv(self, file_path: str, max_columns=None, max_cells=None) -> ParsedFile:
         """
         Parse CSV file with proper encoding detection.
         
@@ -130,10 +155,10 @@ class FileParser:
                     
                     if not headers:
                         raise ValueError("CSV file has no headers")
-                    _validate_headers(headers)
+                    _validate_headers(headers, max_columns)
                     
                     for row_num, row in enumerate(reader, start=2):
-                        if row_num > MAX_ROWS + 1 or (row_num - 1) * len(headers) > MAX_CELLS:
+                        if row_num > MAX_ROWS + 1 or (row_num - 1) * len(headers) > (MAX_CELLS if max_cells is None else max_cells):
                             raise ValueError('File exceeds the row or cell limit')
                         if None in row:
                             raise ValueError('A data row has more cells than the header')
@@ -174,7 +199,8 @@ class FileParser:
         logger.error("Failed to decode CSV file with any supported encoding")
         raise ValueError(f"File encoding not supported. Tried: {', '.join(encodings_to_try)}. Please ensure file is properly encoded.") from last_error
     
-    def _parse_xlsx(self, file_path: str) -> ParsedFile:
+    def _parse_xlsx(self, file_path: str, max_columns=None, max_cells=None,
+                    max_expanded_bytes=None) -> ParsedFile:
         """
         Parse XLSX file (first worksheet only).
         
@@ -189,7 +215,7 @@ class FileParser:
         """
         try:
             # Load workbook and get first worksheet
-            _validate_archive(file_path)
+            _validate_archive(file_path, max_expanded_bytes)
             workbook = load_workbook(filename=file_path, read_only=True, data_only=True)
             
             if not workbook.worksheets:
@@ -201,9 +227,9 @@ class FileParser:
             all_rows = []
             try:
                 for row in worksheet.iter_rows(values_only=True):
-                    if len(all_rows) > MAX_ROWS or len(row) > MAX_COLUMNS:
+                    if len(all_rows) > MAX_ROWS or len(row) > (MAX_COLUMNS if max_columns is None else max_columns):
                         raise ValueError('Workbook exceeds the row or column limit')
-                    if (len(all_rows) + 1) * len(row) > MAX_CELLS:
+                    if (len(all_rows) + 1) * len(row) > (MAX_CELLS if max_cells is None else max_cells):
                         raise ValueError('Workbook exceeds the cell limit')
                     all_rows.append(row)
             finally:
@@ -215,7 +241,7 @@ class FileParser:
             
             # First row is headers
             headers = [str(cell) if cell is not None else '' for cell in all_rows[0]]
-            _validate_headers(headers)
+            _validate_headers(headers, max_columns)
             
             if not any(headers):  # All headers are empty
                 workbook.close()

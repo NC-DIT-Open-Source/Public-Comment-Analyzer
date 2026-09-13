@@ -36,6 +36,26 @@ def error_response(code: str, message: str, status: int):
     return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
 
 
+def _static_asset_manifest() -> dict[str, Path]:
+    """Enumerate trusted build files once; requests only select manifest keys."""
+    root = Path(os.environ.get('APP_STATIC_DIR', 'frontend/dist/public-comment-app/browser')).resolve()
+    assets = {}
+    for directory, subdirectories, filenames in os.walk(root, followlinks=False):
+        parent = Path(directory)
+        subdirectories[:] = [name for name in subdirectories
+                             if not name.startswith('.') and not (parent / name).is_symlink()]
+        for filename in filenames:
+            if filename.startswith('.'):
+                continue
+            candidate = parent / filename
+            if candidate.is_symlink() or not candidate.is_file():
+                continue
+            resolved = candidate.resolve()
+            if resolved.is_relative_to(root):
+                assets[candidate.relative_to(root).as_posix()] = resolved
+    return assets
+
+
 class RateLimiter:
     """Bounded process-local admission control; ingress limits add another layer."""
     def __init__(self):
@@ -121,6 +141,7 @@ def create_app(*, start_worker: bool = True):
         from inference import validate_configuration
         validate_configuration()
         app.state.runtime = get_runtime()
+        app.state.static_assets = _static_asset_manifest()
         app.state.inflight = asyncio.Semaphore(8)
         app.state.uploads = asyncio.Semaphore(2)
         if start_worker:
@@ -268,14 +289,15 @@ def create_app(*, start_worker: bool = True):
 
     @app.get("/{path:path}")
     async def frontend(path: str):
-        root = Path(os.environ.get("APP_STATIC_DIR", "frontend/dist/public-comment-app/browser")).resolve()
-        candidate = (root / path).resolve()
-        if not candidate.is_relative_to(root) or any(part.startswith(".") for part in Path(path).parts):
+        parts = path.split('/')
+        if '\\' in path or '\x00' in path or any(part.startswith('.') for part in parts):
             return error_response("NOT_FOUND", "File not found", 404)
-        if candidate.is_file():
-            return FileResponse(candidate)
-        if not Path(path).suffix and (root / "index.html").is_file():
-            return FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
+        candidate = app.state.static_assets.get(path)
+        if candidate is not None:
+            return FileResponse(candidate, headers={'Cache-Control': 'no-cache'} if path == 'index.html' else None)
+        index = app.state.static_assets.get('index.html')
+        if '.' not in parts[-1] and index is not None:
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
         return error_response("NOT_FOUND", "Build the frontend or use its development server", 404)
 
     return app

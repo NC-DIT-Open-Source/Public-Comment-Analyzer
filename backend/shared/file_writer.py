@@ -20,6 +20,14 @@ def _escape_formula(value):
     return value
 
 
+def export_headers(headers: List[str]) -> List[str]:
+    """Map exact column names to safe, unambiguous spreadsheet headers."""
+    escaped = [_escape_formula(header) for header in headers]
+    if len(set(escaped)) != len(escaped):
+        raise ValueError('Column names collide after spreadsheet formula protection. Rename the conflicting source or analysis column before processing.')
+    return escaped
+
+
 class FileWriter:
     """Writer for CSV and XLSX files."""
     
@@ -34,6 +42,7 @@ class FileWriter:
             output_path: Path to output file
             file_type: File type ('csv' or 'xlsx')
         """
+        export_headers(headers)
         if file_type.lower() == 'csv':
             self._write_csv(headers, rows, output_path)
         elif file_type.lower() in ['xlsx', 'xls']:

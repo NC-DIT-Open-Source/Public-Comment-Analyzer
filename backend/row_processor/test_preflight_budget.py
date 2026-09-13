@@ -63,7 +63,7 @@ def test_insufficient_remaining_call_capacity_rejected(process_context, monkeypa
     inference._reserve('An earlier synthetic request', 50)
     response = handler.lambda_handler(event, None)
     assert response['statusCode'] == 409
-    assert json.loads(response['body'])['inferenceEstimate']['remainingCalls'] == 2
+    assert json.loads(response['body'])['inferenceEstimate']['remainingDeploymentCalls'] == 2
     create_job.assert_not_called()
     enqueue.assert_not_called()
     assert inference.budget_status()['calls'] == 1
@@ -77,7 +77,7 @@ def test_preflight_uses_production_prompts_and_is_additive(process_context):
     assert body['jobId'] and body['status'] == 'pending'
     estimate = body['inferenceEstimate']
     assert estimate['rows'] == 2 and estimate['minimumCalls'] == 3
-    assert estimate['maximumCallsIncludingRetries'] == 9
+    assert estimate['estimatedCallsIncludingRetries'] == 9
     columns = [{'name': 'Summary', 'type': 'open_text', 'instructions': 'Summarize the comment.'}]
     expected = sum(inference.estimate_call_cost(handler._prepare_row_request(
         {'comment': f'PRIVATE_COMMENT {label}'}, columns, 'comment', 'Synthetic test')[0], 500)
@@ -97,7 +97,7 @@ def test_preflight_does_not_require_maximum_retry_budget(process_context, monkey
     response = handler.lambda_handler(event, None)
     assert response['statusCode'] == 200
     estimate = json.loads(response['body'])['inferenceEstimate']
-    assert estimate['maximumCallsIncludingRetries'] > estimate['remainingCalls']
+    assert estimate['estimatedCallsIncludingRetries'] > estimate['remainingDeploymentCalls']
     enqueue.assert_called_once()
 
 

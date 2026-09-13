@@ -51,6 +51,10 @@ def _integer(name: str, default: int, low: int, high: int) -> int:
     return value
 
 
+def prompt_character_limit() -> int:
+    return _integer("LLM_MAX_PROMPT_CHARS", 200000, 1000, 1000000)
+
+
 def concurrency_limit() -> int:
     return _integer("LLM_MAX_CONCURRENCY", 4, 1, 32)
 
@@ -517,17 +521,17 @@ def preflight_job(prompts, *, categorized_columns: int = 0,
     estimate = {
         'rows': rows,
         'minimumCalls': minimum_calls,
-        'maximumCallsIncludingRetries': rows * (3 + 3 * categorized_columns) + (summary_chunk_calls + 1) * 3,
+        'estimatedCallsIncludingRetries': rows * (3 + 3 * categorized_columns) + (summary_chunk_calls + 1) * 3,
         'rowFirstPassReservationUsd': float(Decimal(row_nano) / nano_scale),
         'minimumSummaryReservationUsd': float(Decimal(summary_nano) / nano_scale),
         'minimumRequiredReservationUsd': float(Decimal(required_nano) / nano_scale),
         'remainingBudgetUsd': float(Decimal(remaining_nano) / nano_scale) if remaining_nano is not None else None,
-        'remainingCalls': max(0, call_limit - used_calls),
+        'remainingDeploymentCalls': max(0, call_limit - used_calls),
         'includesRetries': False,
         'includesFullSummaryInput': False,
-        'assumptions': 'Conservative application reservations for exact row prompts plus minimum summary overhead, not a billing quote. Summary input and retries require additional budget. Concurrent jobs may consume the remaining budget.',
+        'assumptions': 'Conservative application reservations for exact row prompts plus minimum summary overhead, not a billing quote. Summary input, size-driven map/reduction calls and retries require additional budget. Estimated calls use row counts; remaining calls and budget are deployment-wide hard caps shared with concurrent jobs.',
     }
-    if minimum_calls > estimate['remainingCalls']:
+    if minimum_calls > estimate['remainingDeploymentCalls']:
         raise InferencePreflightError('The remaining inference call limit cannot cover this file and its summary. Ask the operator to review the limit before starting.', estimate)
     if remaining_nano is not None and required_nano > remaining_nano:
         raise InferencePreflightError('The remaining inference budget cannot cover the first pass and minimum summary cost. Ask the operator to review the budget before starting.', estimate)

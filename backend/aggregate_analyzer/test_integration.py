@@ -97,8 +97,9 @@ class TestAggregateAnalyzerIntegration(unittest.TestCase):
         self.assertIn('rating — All 100 responses:', formatted_data)
         
         # Verify sample size is limited (not all 100 rows)
-        sample_count = formatted_data.count('Sample')
-        self.assertLessEqual(sample_count, 11)  # Max 10 samples, word appears once per sample
+        sample_count = formatted_data.count('Sample source row ')
+        self.assertLessEqual(sample_count, 10)
+        self.assertIn('Sample rows omitted for prompt size: 0.', formatted_data)
     
     def test_prompt_construction_requirements(self):
         """Test that prompt meets requirements 6.1, 6.2, 6.3."""

@@ -190,6 +190,24 @@ describe('ResultsViewerComponent', () => {
   });
 
   describe('Display', () => {
+    it('provides the chart values as an accessible table', fakeAsync(() => {
+      mockResultsService.getResults.and.returnValue(of({downloadUrl: '/api/download', aggregateAnalysis: 'Draft analysis'}));
+      component.jobId = 'test-job';
+      component.dashboardCharts = [{title: 'Synthetic positions', description: '', type: 'bar', config: {
+        data: {labels: ['Support', 'Concern'], datasets: [{label: 'Comments', data: [12, 8]}]}
+      }}];
+      fixture.detectChanges();
+      tick();
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('canvas')?.getAttribute('aria-label')).toContain('Synthetic positions');
+      expect(compiled.querySelector('table caption')?.textContent).toContain('Synthetic positions');
+      expect(compiled.querySelector('table')?.textContent).toContain('Support');
+      expect(compiled.querySelector('table')?.textContent).toContain('12');
+      expect(compiled.querySelector('table')?.textContent).toContain('Concern');
+      expect(compiled.querySelector('table')?.textContent).toContain('8');
+    }));
+
     it('should display loading state', () => {
       component.isLoading = true;
       fixture.detectChanges();

@@ -60,6 +60,27 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - run: docker build --tag public-comment-analyzer:local .
+      # The built image also contains OS packages, outside npm and pip audits.
+      # Keep detailed findings only in runner temp storage, never public artifacts.
+      - name: Check the image for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        timeout-minutes: 8
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: public-comment-analyzer:local
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          timeout: 5m
+          hide-progress: true
+          format: json
+          output: ${{ runner.temp }}/container-vulnerabilities.json
+          cache-dir: ${{ runner.temp }}/trivy-cache
+        env:
+          TRIVY_DISABLE_TELEMETRY: 'true'
       - name: Start locked-down offline demo
         run: |
           mkdir -m 700 .secrets

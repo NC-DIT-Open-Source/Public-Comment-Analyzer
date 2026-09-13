@@ -16,7 +16,7 @@ from auth import validate_access_key, build_unauthorized_response
 from file_parser import FileParser, ParsedFile
 from inference import (invoke_text, preflight_job, SUMMARY_CHUNK_SIZE, untrusted_text, concurrency_limit,
                        InferenceError, InferenceConfigurationError, InferenceLimitError)
-from file_writer import FileWriter
+from file_writer import FileWriter, export_headers
 from runtime import get_object_store, get_job_store, enqueue_task, StorageError
 
 import logging
@@ -745,6 +745,9 @@ def _process_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         notice_column = _demo_notice_column(parsed_file.headers, analysis_columns)
         if notice_column:
             output_headers.append(notice_column)
+        # Keep an exact schema for safe readback after spreadsheet headers are
+        # formula-protected; publish completion only after the file is stored.
+        get_job_store().update(job_id, {'exportHeaders': output_headers})
         with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_type}') as tmp_output:
             output_path = tmp_output.name
             writer = FileWriter()
@@ -875,6 +878,11 @@ def _get_row_count(s3_key: str, file_type: str, analysis_columns=None, selected_
         if (selected_comment_column is not None and selected_comment_column not in parsed.headers
                 and sum(name.casefold() == selected_comment_column.casefold() for name in parsed.headers) > 1):
             raise ValueError('The selected comment column is ambiguous. Choose its exact name.')
+        output_headers = parsed.headers + [col['name'] for col in analysis_columns or []] + ['_error']
+        notice_column = _demo_notice_column(parsed.headers, analysis_columns or [])
+        if notice_column:
+            output_headers.append(notice_column)
+        export_headers(output_headers)
         if preflight is not None:
             columns = analysis_columns or []
             categorized_count = sum(col.get('type') == 'categorized' and bool(col.get('options')) for col in columns)

@@ -297,6 +297,94 @@ def test_source_error_column_is_preserved_by_rejecting_ambiguous_export(client):
     assert client.app.state.runtime.objects.path(f'uploads/{file_id}/input.csv').read_bytes().endswith(b'original note')
 
 
+@pytest.mark.parametrize('extension', ['csv', 'xlsx'])
+@pytest.mark.parametrize('source_columns', [3, 1000])
+def test_formula_header_and_wide_source_keep_summary_dashboard_counts(client, monkeypatch, extension, source_columns):
+    headers = ['comment'] + [f'metadata{i}' for i in range(source_columns - 1)]
+    rows = [[f'Synthetic comment {i}'] + ['original'] * (source_columns - 1) for i in range(2)]
+    if extension == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(rows)
+        content = output.getvalue().encode()
+    else:
+        workbook = Workbook()
+        workbook.active.append(headers)
+        for row in rows:
+            workbook.active.append(row)
+        output = io.BytesIO()
+        workbook.save(output)
+        content = output.getvalue()
+    upload = client.post('/api/upload', files={'file': (f'comments.{extension}', content)})
+    assert upload.status_code == 200
+    response = client.post('/api/process', json={
+        'fileId': upload.json()['fileId'], 'selectedCommentColumn': 'comment', 'contextDescription': 'Synthetic comments',
+        'analysisColumns': [{'name': '+Finding', 'type': 'categorized', 'instructions': 'Classify',
+                             'options': [{'value': 'Support', 'description': 'Support'}, {'value': 'Oppose', 'description': 'Oppose'}]}],
+    })
+    assert response.status_code == 200, response.text
+    job_id = response.json()['jobId']
+    runtime = client.app.state.runtime
+    assert runtime.run_one()
+    assert runtime.jobs.get(job_id)['status'] == 'completed'
+    assert runtime.jobs.get(job_id)['exportHeaders'][source_columns] == '+Finding'
+    from backend.aggregate_analyzer import handler as aggregate
+    from backend.dashboard_generator import handler as dashboard
+    prompts = {}
+    def summarize(prompt):
+        prompts['summary'] = prompt
+        return 'Draft summary for synthetic test'
+    def charts(prompt):
+        prompts['dashboard'] = prompt
+        return json.dumps({'charts': [], 'narrative': 'Demo dashboard'})
+    monkeypatch.setattr(aggregate, '_call_summary_model', summarize)
+    monkeypatch.setattr(dashboard, '_call_dashboard_model', charts)
+    assert runtime.run_one()
+    result = client.get(f'/api/results/{job_id}').json()
+    assert result['aggregateAnalysis'] == 'Draft summary for synthetic test'
+    assert 'Support: 2 (100.0%)' in prompts['summary']
+    assert client.post(f'/api/dashboard/{job_id}', json={'prompt': 'Count positions'}).status_code == 200
+    assert 'Support: 2 (100.0%)' in prompts['dashboard']
+    assert 'Synthetic comment 0' in prompts['dashboard']
+    download = client.get(result['downloadUrl'])
+    assert download.status_code == 200
+    if extension == 'csv':
+        exported = list(csv.reader(io.StringIO(download.text)))
+    else:
+        workbook = load_workbook(io.BytesIO(download.content), read_only=True, data_only=False)
+        exported = list(workbook.active.values)
+        workbook.close()
+    assert exported[0][source_columns] == "'+Finding"
+    assert exported[1][source_columns] == 'Support'
+    assert exported[1][0] == 'Synthetic comment 0'
+
+
+@pytest.mark.parametrize('source_headers,analysis_name', [
+    (['comment', "'+Finding"], '+Finding'),
+    (['comment', '+metadata', "'+metadata"], 'Finding'),
+])
+def test_escaped_header_collision_is_rejected_before_job_and_inference(client, monkeypatch, source_headers, analysis_name):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(source_headers)
+    writer.writerow(['synthetic'] * len(source_headers))
+    upload = client.post('/api/upload', files={'file': ('comments.csv', output.getvalue().encode())})
+    assert upload.status_code == 200
+    from backend.row_processor import handler
+    monkeypatch.setattr(handler, 'preflight_job', lambda *_args, **_kwargs: pytest.fail('Inference preflight must not run for ambiguous headers'))
+    response = client.post('/api/process', json={
+        'fileId': upload.json()['fileId'], 'selectedCommentColumn': 'comment', 'contextDescription': 'Synthetic comments',
+        'analysisColumns': [{'name': analysis_name, 'type': 'open_text', 'instructions': 'Summarize'}],
+    })
+    assert response.status_code == 400
+    assert response.json()['error']['code'] == 'INVALID_COLUMNS'
+    assert 'collide' in response.json()['error']['message']
+    assert not client.app.state.runtime.run_one()
+    with client.app.state.runtime.jobs.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM jobs').fetchone()[0] == 0
+
+
 def test_demo_notice_does_not_overwrite_existing_source_column(client):
     response = client.post('/api/upload', files={'file': ('comments.csv', b'comment,_analysis_notice\nHello,original notice')})
     assert response.status_code == 200
@@ -363,6 +451,51 @@ def test_auth_rate_limit_is_bounded_before_password_work(client):
     for _ in range(12):
         assert client.post('/api/auth/validate', json={'password': 'incorrect'}).status_code == 401
     assert client.post('/api/auth/validate', json={'password': 'incorrect'}).status_code == 429
+
+
+def test_static_manifest_serves_build_and_spa_without_exposing_private_files(client, tmp_path, monkeypatch):
+    from backend.local.app import create_app
+    static = tmp_path / 'build'
+    static.mkdir()
+    (static / 'index.html').write_text('<html>Application shell</html>')
+    (static / 'main.js').write_text('const application = true;')
+    (static / 'assets').mkdir()
+    (static / 'assets' / 'logo.svg').write_text('<svg></svg>')
+    (static / '.env').write_text('synthetic private configuration')
+    (static / '.private').mkdir()
+    (static / '.private' / 'hidden.txt').write_text('synthetic hidden data')
+    private = tmp_path / 'private'
+    private.mkdir()
+    (private / 'secret.txt').write_text('synthetic outside secret')
+    (static / 'outside.txt').symlink_to(private / 'secret.txt')
+    (static / 'linked-directory').symlink_to(private, target_is_directory=True)
+    monkeypatch.setenv('APP_STATIC_DIR', str(static))
+    with TestClient(create_app(start_worker=False)) as http:
+        for path in ('/', '/upload', '/process/example'):
+            response = http.get(path)
+            assert response.status_code == 200
+            assert response.text == '<html>Application shell</html>'
+            assert response.headers['cache-control'] == 'no-cache'
+        assert http.get('/index.html').headers['cache-control'] == 'no-cache'
+        assert http.get('/main.js').text == 'const application = true;'
+        assert http.get('/assets/logo.svg').text == '<svg></svg>'
+        for path in ('/.env', '/.private/hidden.txt', '/outside.txt', '/linked-directory/secret.txt',
+                     '/%2e%2e/private/secret.txt', '/assets/%2e%2e/.env', '/%2e%2e%5cprivate%5csecret.txt',
+                     '/missing.js', '/%00'):
+            response = http.get(path)
+            assert response.status_code == 404, path
+            assert 'synthetic' not in response.text
+        # Build changes require restart; a request cannot discover extra files.
+        (static / 'later.txt').write_text('not in the startup manifest')
+        assert http.get('/later.txt').status_code == 404
+
+
+def test_missing_static_build_keeps_local_api_available(client, tmp_path, monkeypatch):
+    from backend.local.app import create_app
+    monkeypatch.setenv('APP_STATIC_DIR', str(tmp_path / 'not-built-yet'))
+    with TestClient(create_app(start_worker=False)) as http:
+        assert http.get('/').status_code == 404
+        assert http.get('/api/health').status_code == 200
 
 
 def test_summary_failure_keeps_row_download_available(client, monkeypatch):
