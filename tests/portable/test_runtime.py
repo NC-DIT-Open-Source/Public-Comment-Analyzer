@@ -183,6 +183,24 @@ def test_jobs_survive_restart_and_interrupted_paid_work_is_not_replayed(client):
     assert not restarted.run_one()
 
 
+def test_runtime_lifecycle_stops_new_inference_and_resumes_after_start(tmp_path, monkeypatch):
+    from inference import _enabled, InferenceLimitError, pause_for_shutdown, resume_after_startup
+    monkeypatch.setenv('LLM_ENABLED', 'true')
+    monkeypatch.delenv('LLM_KILL_SWITCH_FILE', raising=False)
+    runtime = LocalRuntime(tmp_path)
+    pause_for_shutdown()
+    try:
+        runtime.start()
+        _enabled()
+        runtime.stop()
+        with pytest.raises(InferenceLimitError, match='shuts down'):
+            _enabled()
+        assert not runtime.healthy()
+    finally:
+        runtime.stop()
+        resume_after_startup()
+
+
 @pytest.mark.parametrize('phase', ['full', 'confirm', 'preview'])
 def test_recovery_preserves_saved_results_before_queue_acknowledgment(client, phase):
     runtime = client.app.state.runtime

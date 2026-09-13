@@ -417,6 +417,8 @@ class LocalRuntime:
             raise RuntimeConfigurationError("Only one application worker may use a data directory") from exc
         self._process_lock = handle
         self.recover()
+        from inference import resume_after_startup
+        resume_after_startup()
         self._stop.clear()
 
         def work():
@@ -431,6 +433,8 @@ class LocalRuntime:
         self._worker.start()
 
     def stop(self):
+        from inference import pause_for_shutdown
+        pause_for_shutdown()
         self._stop.set()
         self._wake.set()
         if self._worker:
