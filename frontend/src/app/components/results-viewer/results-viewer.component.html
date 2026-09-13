@@ -4,7 +4,7 @@
     <p>Loading your results...</p>
   </div>
 
-  <div class="error-state" *ngIf="error && !isLoading">
+  <div class="error-state" *ngIf="error && !isLoading" role="alert">
     <mat-card class="error-card">
       <mat-icon>error_outline</mat-icon>
       <h3>Error Loading Results</h3>
@@ -74,8 +74,7 @@
                       rows="3"
                       placeholder="e.g., Show me a pie chart of sentiment breakdown and a bar chart comparing the top themes"
                       [disabled]="isDashboardLoading"
-                      maxlength="2000"
-                      aria-label="Describe the charts or insights you want to generate"></textarea>
+                      maxlength="2000"></textarea>
             <mat-hint align="end">{{ dashboardPrompt.length }} / 2000</mat-hint>
           </mat-form-field>
           <button mat-raised-button

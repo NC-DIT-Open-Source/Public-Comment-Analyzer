@@ -184,13 +184,13 @@
         padding: 2px 8px;
         border-radius: 12px;
         background-color: $color-gray;
-        color: $color-gray-dark;
+        color: $color-primary;
         font-weight: $font-weight-bold;
         text-transform: uppercase;
         letter-spacing: 0.5px;
 
         &.categorized {
-          background-color: $color-secondary;
+          background-color: $color-secondary-dark-text;
           color: $color-white;
         }
       }

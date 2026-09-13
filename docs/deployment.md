@@ -183,7 +183,9 @@ Terminate TLS at the proxy, enforce request-size limits and authentication
 rate limits there, and restrict network access to the intended users. The
 shared-password gate grants access to the whole instance; use separate
 instances or an identity-aware gateway when groups need isolated datasets.
-Do not mount a Docker socket or cloud credentials into the application.
+Never mount the Docker socket or an entire host credential directory. Supply
+only the credentials needed to invoke the selected provider, preferably through
+supported workload identity or narrowly scoped secret files.
 
 Configure your proxy's upstream timeout for uploads and API requests. Processing
 runs asynchronously, so polling requests should stay short. `/health` is the

@@ -33,6 +33,7 @@
           <div class="progress-section" *ngIf="jobStatus && !hasFailed">
             <mat-progress-bar
               mode="determinate"
+              aria-label="Comment processing progress"
               [value]="progressPercentage">
             </mat-progress-bar>
             <div class="progress-info">
@@ -100,13 +101,13 @@
         <!-- Analyzing -->
         <ng-container *ngIf="currentStep === 2 && !hasFailed && jobStatus?.status !== 'preview_ready'">
           <mat-icon class="step-icon">analytics</mat-icon>
-          <p>Generating aggregate analysis. This may take up to 10 minutes.</p>
+          <p role="status">Generating aggregate analysis. Your completed row download remains available.</p>
         </ng-container>
 
         <!-- Complete -->
         <ng-container *ngIf="currentStep >= 3 && !hasFailed">
           <mat-icon class="step-icon success">check_circle</mat-icon>
-          <p>Your analysis is ready!</p>
+          <p role="status">Your analysis is ready!</p>
         </ng-container>
       </div>
 
@@ -120,7 +121,7 @@
         </div>
 
         <!-- Results error -->
-        <div class="results-error" *ngIf="resultsError">
+        <div class="results-error" *ngIf="resultsError" role="alert">
           <mat-icon color="warn">error</mat-icon>
           <p>{{ resultsError }}</p>
           <div class="results-actions">
@@ -165,8 +166,7 @@
                           rows="3"
                           placeholder="e.g., Show me a pie chart of sentiment breakdown and a bar chart comparing the top themes"
                           [disabled]="isDashboardLoading"
-                          maxlength="2000"
-                          aria-label="Describe the charts or insights you want to generate"></textarea>
+                          maxlength="2000"></textarea>
                 <mat-hint align="end">{{ dashboardPrompt.length }} / 2000</mat-hint>
               </mat-form-field>
               <div class="generate-btn-row">
