@@ -156,11 +156,19 @@ jobs:
     # always() is needed because deploy-infrastructure is legitimately skipped
     # for frontend-only changes; the explicit result checks below keep that from
     # also letting a failed test-frontend through.
+    #
+    # 'skipped' is only accepted when the backend/infra genuinely didn't change.
+    # Without that qualifier a red test-backend would skip deploy-infrastructure
+    # and this job would read the skip as "nothing to deploy" and ship the
+    # frontend anyway — the two cases are indistinguishable from result alone.
     if: |
       always() &&
       needs.detect-changes.outputs.frontend == 'true' &&
       needs.test-frontend.result == 'success' &&
-      (needs.deploy-infrastructure.result == 'success' || needs.deploy-infrastructure.result == 'skipped')
+      (needs.deploy-infrastructure.result == 'success' ||
+       (needs.deploy-infrastructure.result == 'skipped' &&
+        needs.detect-changes.outputs.backend != 'true' &&
+        needs.detect-changes.outputs.infrastructure != 'true'))
     permissions:
       contents: read
       id-token: write
