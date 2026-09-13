@@ -392,6 +392,72 @@ def test_escaped_header_collision_is_rejected_before_job_and_inference(client, m
         assert connection.execute('SELECT COUNT(*) FROM jobs').fetchone()[0] == 0
 
 
+@pytest.mark.parametrize('extension', ['csv', 'xlsx'])
+def test_formula_prefixed_categories_keep_exact_summary_and_dashboard_counts(client, monkeypatch, extension):
+    uploaded = _upload(client, rows=2, extension=extension)
+    columns = [{'name': '+Position', 'type': 'categorized', 'instructions': 'Classify',
+                'options': [{'value': '-1', 'description': 'Negative'}, {'value': '+1', 'description': 'Positive'}]}]
+    response = client.post('/api/process', json={
+        'fileId': uploaded['fileId'], 'selectedCommentColumn': 'comment',
+        'contextDescription': 'Synthetic comments', 'analysisColumns': columns,
+    })
+    assert response.status_code == 200, response.text
+    job_id = response.json()['jobId']
+    from backend.row_processor import handler as rows
+    from backend.aggregate_analyzer import handler as aggregate
+    from backend.dashboard_generator import handler as dashboard
+    monkeypatch.setattr(rows, '_process_single_row', lambda row, *_args: {'+Position': '-1' if row['id'] == '0' else '+1'})
+    prompts = {}
+    def summarize(prompt):
+        prompts['summary'] = prompt
+        return 'Synthetic draft summary'
+    def charts(prompt):
+        prompts['dashboard'] = prompt
+        return json.dumps({'charts': [], 'narrative': 'Synthetic demo chart'})
+    monkeypatch.setattr(aggregate, '_call_summary_model', summarize)
+    monkeypatch.setattr(dashboard, '_call_dashboard_model', charts)
+    runtime = client.app.state.runtime
+    original_upload = runtime.objects.path(f"uploads/{uploaded['fileId']}/input.{extension}").read_bytes()
+    assert runtime.run_one()
+    assert runtime.run_one()
+    result = client.get(f'/api/results/{job_id}').json()
+    assert result['aggregateAnalysis'] == 'Synthetic draft summary'
+    assert client.post(f'/api/dashboard/{job_id}', json={'prompt': 'Count each category'}).status_code == 200
+    for prompt in prompts.values():
+        assert '-1: 1 (50.0%)' in prompt
+        assert '+1: 1 (50.0%)' in prompt
+        assert '(unmatched/blank)' not in prompt
+    download = client.get(result['downloadUrl'])
+    if extension == 'csv':
+        exported = list(csv.DictReader(io.StringIO(download.text)))
+    else:
+        workbook = load_workbook(io.BytesIO(download.content), read_only=True, data_only=False)
+        assert all(cell.data_type != 'f' for row in workbook.active for cell in row)
+        values = list(workbook.active.values)
+        exported = [dict(zip(values[0], row)) for row in values[1:]]
+        workbook.close()
+    assert [row["'+Position"] for row in exported] == ["'-1", "'+1"]
+    assert [row['id'] for row in exported] == ['0', '1']
+    assert runtime.objects.path(f"uploads/{uploaded['fileId']}/input.{extension}").read_bytes() == original_upload
+
+
+def test_escaped_category_collision_rejected_before_job_or_inference(client, monkeypatch):
+    uploaded = _upload(client)
+    from backend.row_processor import handler
+    monkeypatch.setattr(handler, 'preflight_job', lambda *_args, **_kwargs: pytest.fail('Ambiguous categories must fail before inference preflight'))
+    response = client.post('/api/process', json={
+        'fileId': uploaded['fileId'], 'selectedCommentColumn': 'comment', 'contextDescription': 'Synthetic comments',
+        'analysisColumns': [{'name': 'Position', 'type': 'categorized', 'instructions': 'Classify',
+                             'options': [{'value': '-1', 'description': 'First'}, {'value': "'-1", 'description': 'Second'}]}],
+    })
+    assert response.status_code == 400
+    assert response.json()['error']['code'] == 'INVALID_COLUMNS'
+    assert 'Category labels collide' in response.json()['error']['message']
+    assert not client.app.state.runtime.run_one()
+    with client.app.state.runtime.jobs.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM jobs').fetchone()[0] == 0
+
+
 def test_demo_notice_does_not_overwrite_existing_source_column(client):
     response = client.post('/api/upload', files={'file': ('comments.csv', b'comment,_analysis_notice\nHello,original notice')})
     assert response.status_code == 200

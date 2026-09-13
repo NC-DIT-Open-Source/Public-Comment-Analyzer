@@ -138,7 +138,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 file_path = tmp.name
             get_object_store().download(output_key, file_path)
             parsed_file = FileParser().parse(file_path, file_type, generated=True,
-                                           original_headers=job_record.get('exportHeaders'))
+                                           original_headers=job_record.get('exportHeaders'),
+                                           analysis_columns=job_record.get('analysisColumns'))
         finally:
             if file_path and os.path.exists(file_path):
                 os.unlink(file_path)

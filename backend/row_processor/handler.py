@@ -16,7 +16,7 @@ from auth import validate_access_key, build_unauthorized_response
 from file_parser import FileParser, ParsedFile
 from inference import (invoke_text, preflight_job, SUMMARY_CHUNK_SIZE, untrusted_text, concurrency_limit,
                        InferenceError, InferenceConfigurationError, InferenceLimitError)
-from file_writer import FileWriter, export_headers
+from file_writer import FileWriter, export_headers, export_category_values
 from runtime import get_object_store, get_job_store, enqueue_task, StorageError
 
 import logging
@@ -883,6 +883,9 @@ def _get_row_count(s3_key: str, file_type: str, analysis_columns=None, selected_
         if notice_column:
             output_headers.append(notice_column)
         export_headers(output_headers)
+        for column in analysis_columns or []:
+            if column.get('type') == 'categorized' and column.get('options'):
+                export_category_values([option['value'] for option in column['options']])
         if preflight is not None:
             columns = analysis_columns or []
             categorized_count = sum(col.get('type') == 'categorized' and bool(col.get('options')) for col in columns)

@@ -52,7 +52,8 @@ class FileParser:
     """Parser for CSV and XLSX files."""
     
     def parse(self, file_path: str, file_type: str, *, generated: bool = False,
-              original_headers: List[str] | None = None) -> ParsedFile:
+              original_headers: List[str] | None = None,
+              analysis_columns: List[Dict] | None = None) -> ParsedFile:
         """
         Parse a CSV or XLSX file.
         
@@ -95,6 +96,24 @@ class FileParser:
             for index, row in enumerate(parsed.rows):
                 parsed.rows[index] = {name: row[safe_name] for name, safe_name in pairs}
             parsed.headers = list(original_headers)
+        if generated and analysis_columns:
+            if __package__:
+                from .file_writer import export_category_values
+            else:
+                from file_writer import export_category_values
+            for column in analysis_columns:
+                if column.get('type') != 'categorized' or not column.get('options'):
+                    continue
+                name = column['name']
+                if name not in parsed.headers:
+                    raise ValueError('Generated category column does not match the saved job schema')
+                values = [option['value'] for option in column['options']]
+                readback = dict(zip(export_category_values(values), values))
+                for row in parsed.rows:
+                    # Only exact, configured category labels are restored.
+                    # Source values, open text and unknown labels stay literal.
+                    value = row.get(name, '')
+                    row[name] = readback.get(value, value)
         return parsed
     
     def _detect_encoding(self, file_path: str) -> str:

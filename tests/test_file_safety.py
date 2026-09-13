@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend' / 'shared'))
 import file_parser
-from file_writer import FileWriter, export_headers
+from file_writer import FileWriter, export_headers, export_category_values
 
 
 @pytest.mark.parametrize('file_type', ['csv', 'xlsx'])
@@ -66,6 +66,34 @@ def test_generated_readback_restores_only_saved_header_mapping(tmp_path, file_ty
     assert restored.rows[0]["'literal"] == 'Kept'
     with pytest.raises(ValueError, match='saved job schema'):
         parser.parse(str(target), file_type, generated=True, original_headers=['different', '+Finding', "'literal"])
+
+
+@pytest.mark.parametrize('file_type', ['csv', 'xlsx'])
+def test_generated_category_readback_keeps_source_and_open_text_literal(tmp_path, file_type):
+    target = tmp_path / f'result.{file_type}'
+    headers = ['comment', '+Position', 'Draft']
+    rows = [{'comment': "'+1", '+Position': value, 'Draft': "'-1"}
+            for value in ('-1', '+1', "'unknown")]
+    columns = [{'name': '+Position', 'type': 'categorized',
+                'options': [{'value': '-1'}, {'value': '+1'}]},
+               {'name': 'Draft', 'type': 'open_text'}]
+    FileWriter().write(headers, rows, str(target), file_type)
+    parser = file_parser.FileParser()
+    uploaded = parser.parse(str(target), file_type, analysis_columns=columns)
+    assert uploaded.rows[0]["'+Position"] == "'-1"
+    restored = parser.parse(str(target), file_type, generated=True,
+                            original_headers=headers, analysis_columns=columns)
+    assert restored.headers == headers
+    assert [row['+Position'] for row in restored.rows] == ['-1', '+1', "'unknown"]
+    assert all(row['comment'] == "'+1" and row['Draft'] == "'-1" for row in restored.rows)
+    # Readback never changes the safe downloaded representation on disk.
+    assert parser.parse(str(target), file_type).rows[1]["'+Position"] == "'+1"
+
+
+def test_category_export_rejects_ambiguous_safe_labels():
+    with pytest.raises(ValueError, match='Category labels collide'):
+        export_category_values(['-1', "'-1"])
+    assert export_category_values(['-1', '+1', "'literal"]) == ["'-1", "'+1", "'literal"]
 
 
 @pytest.mark.parametrize('file_type', ['csv', 'xlsx'])

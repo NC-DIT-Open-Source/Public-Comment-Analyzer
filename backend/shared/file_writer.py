@@ -28,6 +28,14 @@ def export_headers(headers: List[str]) -> List[str]:
     return escaped
 
 
+def export_category_values(values: List[str]) -> List[str]:
+    """Require a reversible formula-safe representation for each category."""
+    escaped = [_escape_formula(value) for value in values]
+    if len(set(escaped)) != len(escaped):
+        raise ValueError('Category labels collide after spreadsheet formula protection. Rename the conflicting labels before processing.')
+    return escaped
+
+
 class FileWriter:
     """Writer for CSV and XLSX files."""
     
