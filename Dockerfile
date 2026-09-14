@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS frontend
+FROM node:26-bookworm-slim@sha256:cd9f682fa2885cd1056e830424764158570061c59736a1da836bc3d73df095ae AS frontend
 WORKDIR /build/frontend
 ENV HUSKY=0
 COPY frontend/package.json frontend/package-lock.json ./
