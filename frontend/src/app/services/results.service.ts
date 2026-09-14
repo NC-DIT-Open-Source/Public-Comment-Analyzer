@@ -6,7 +6,7 @@ import { environment } from '../../environments/environment';
 export interface ResultsResponse {
   downloadUrl: string;
   aggregateAnalysis: string | null;
-  analysisStatus?: 'generating';
+  analysisStatus?: 'generating' | 'failed';
   message?: string;
 }
 

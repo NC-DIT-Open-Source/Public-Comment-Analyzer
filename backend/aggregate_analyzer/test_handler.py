@@ -1,4 +1,4 @@
-"""Unit tests for aggregate analyzer Lambda handler."""
+"""Unit tests for aggregate analyzer handler."""
 
 import json
 import os
@@ -20,15 +20,7 @@ class TestAggregateAnalyzer(unittest.TestCase):
     """Test cases for aggregate analyzer handler."""
     
     def setUp(self):
-        """Set up test fixtures."""
-        # Set environment variables
-        os.environ['DATA_BUCKET'] = 'test-bucket'
-        os.environ['JOBS_TABLE'] = 'test-table'
-        
-        # Reset global clients
-        handler._s3_client = None
-        handler._dynamodb = None
-        handler._bedrock_runtime = None
+        os.environ['ALLOWED_ORIGIN'] = 'http://localhost:4200'
     
     def test_missing_job_id(self):
         """Test handler with missing jobId."""
@@ -40,81 +32,32 @@ class TestAggregateAnalyzer(unittest.TestCase):
         body = json.loads(response['body'])
         self.assertEqual(body['error']['code'], 'MISSING_JOB_ID')
     
-    @patch('handler._get_dynamodb')
-    def test_job_not_found(self, mock_get_dynamodb):
-        """Test handler with non-existent job."""
-        # Mock DynamoDB
-        mock_table = Mock()
-        mock_table.get_item.return_value = {}
-        mock_dynamodb = Mock()
-        mock_dynamodb.Table.return_value = mock_table
-        mock_get_dynamodb.return_value = mock_dynamodb
-        
-        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}
-        
-        response = handler.lambda_handler(event, None)
-        
+    @patch('handler.get_job_store')
+    def test_job_not_found(self, get_store):
+        get_store.return_value.get.return_value = None
+        response = handler.lambda_handler({'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}, None)
         self.assertEqual(response['statusCode'], 404)
-        body = json.loads(response['body'])
-        self.assertEqual(body['error']['code'], 'JOB_NOT_FOUND')
+        self.assertEqual(json.loads(response['body'])['error']['code'], 'JOB_NOT_FOUND')
     
-    @patch('handler._get_dynamodb')
-    def test_job_not_completed(self, mock_get_dynamodb):
-        """Test handler with job that is still processing."""
-        # Mock DynamoDB
-        mock_table = Mock()
-        mock_table.get_item.return_value = {
-            'Item': {
-                'jobId': '123e4567-e89b-42d3-a456-426614174000',
-                'status': 'processing',
-                'outputFileKey': 'results/123e4567-e89b-42d3-a456-426614174000/output.csv'
-            }
-        }
-        mock_dynamodb = Mock()
-        mock_dynamodb.Table.return_value = mock_table
-        mock_get_dynamodb.return_value = mock_dynamodb
-        
-        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}
-        
-        response = handler.lambda_handler(event, None)
-        
+    @patch('handler.get_job_store')
+    def test_job_not_completed(self, get_store):
+        get_store.return_value.get.return_value = {'status': 'processing'}
+        response = handler.lambda_handler({'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}, None)
         self.assertEqual(response['statusCode'], 400)
-        body = json.loads(response['body'])
-        self.assertEqual(body['error']['code'], 'JOB_NOT_COMPLETED')
+        self.assertEqual(json.loads(response['body'])['error']['code'], 'JOB_NOT_COMPLETED')
     
-    @patch('handler._get_dynamodb')
-    @patch('handler._generate_presigned_url')
-    def test_cached_analysis(self, mock_presigned_url, mock_get_dynamodb):
-        """Test handler returns cached analysis if it exists."""
-        # Mock DynamoDB
-        mock_table = Mock()
-        mock_table.get_item.return_value = {
-            'Item': {
-                'jobId': '123e4567-e89b-42d3-a456-426614174000',
-                'status': 'completed',
-                'outputFileKey': 'results/123e4567-e89b-42d3-a456-426614174000/output.csv',
-                'aggregateAnalysis': 'Cached analysis text',
-                'analysisColumns': [{'name': 'sentiment', 'instructions': 'Analyze sentiment'}]
-            }
-        }
-        mock_dynamodb = Mock()
-        mock_dynamodb.Table.return_value = mock_table
-        mock_get_dynamodb.return_value = mock_dynamodb
-        
-        # Mock presigned URL
-        mock_presigned_url.return_value = 'https://s3.amazonaws.com/presigned-url'
-        
-        event = {'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}
-        
-        response = handler.lambda_handler(event, None)
-        
+    @patch('handler.get_job_store')
+    @patch('handler._generate_presigned_url', return_value='http://localhost/api/download/test')
+    def test_cached_analysis(self, signed_url, get_store):
+        get_store.return_value.get.return_value = {'status': 'completed', 'outputFileKey': 'results/test/output.csv',
+                                                   'aggregateAnalysis': 'Cached analysis text'}
+        response = handler.lambda_handler({'pathParameters': {'jobId': '123e4567-e89b-42d3-a456-426614174000'}}, None)
         self.assertEqual(response['statusCode'], 200)
-        body = json.loads(response['body'])
-        self.assertEqual(body['aggregateAnalysis'], 'Cached analysis text')
-        self.assertEqual(body['downloadUrl'], 'https://s3.amazonaws.com/presigned-url')
+        self.assertEqual(json.loads(response['body'])['aggregateAnalysis'], 'Cached analysis text')
+        self.assertEqual(json.loads(response['body'])['downloadUrl'], signed_url.return_value)
     
     def test_get_file_type(self):
-        """Test file type extraction from S3 key."""
+        """Test file type extraction from object key."""
         self.assertEqual(handler._get_file_type('results/job-123/output.csv'), 'csv')
         self.assertEqual(handler._get_file_type('results/job-123/output.xlsx'), 'xlsx')
         
@@ -152,7 +95,7 @@ class TestAggregateAnalyzer(unittest.TestCase):
         self.assertIn('Sample', formatted_data)
     
     def test_construct_aggregate_prompt(self):
-        """Test prompt construction for Claude Opus."""
+        """Test prompt construction for the summary integration."""
         formatted_data = "Total Comments: 100\nsentiment: positive 60%, negative 40%"
         analysis_columns = [
             {'name': 'sentiment', 'instructions': 'Analyze sentiment as positive, negative, or neutral'}
@@ -168,88 +111,36 @@ class TestAggregateAnalyzer(unittest.TestCase):
         self.assertIn('Categorized Column Breakdown', prompt)
         self.assertIn('Open Text Themes and Patterns', prompt)
     
-    @patch('handler._get_bedrock_runtime')
-    def test_call_bedrock_opus_success(self, mock_get_bedrock):
-        """Test successful Bedrock call."""
-        # Mock Bedrock response
-        mock_response = {
-            'body': MagicMock()
-        }
-        mock_response['body'].read.return_value = json.dumps({
-            'content': [{'text': 'Aggregate analysis result'}]
-        }).encode('utf-8')
-        
-        mock_bedrock_client = Mock()
-        mock_bedrock_client.invoke_model.return_value = mock_response
-        mock_get_bedrock.return_value = mock_bedrock_client
-        
-        result = handler._call_bedrock_opus('Test prompt')
-        
-        self.assertEqual(result, 'Aggregate analysis result')
-        
-        # Verify Bedrock was called with correct model ID
-        call_args = mock_bedrock_client.invoke_model.call_args
-        self.assertEqual(call_args[1]['modelId'], handler.CLAUDE_OPUS_MODEL_ID)
+    @patch('handler.invoke_text_with_retries', return_value='Aggregate analysis result')
+    def test_call_summary_model_success(self, invoke):
+        result = handler._call_summary_model('Test prompt')
+        self.assertIn('Aggregate analysis result', result)
+        self.assertTrue(result.startswith('**AI-generated draft'))
+        invoke.assert_called_once_with('Test prompt', role='summary', max_tokens=4096)
     
-    @patch('handler._get_bedrock_runtime')
     @patch('time.sleep')
-    def test_call_bedrock_opus_retry(self, mock_sleep, mock_get_bedrock):
-        """Test Bedrock call with retry logic."""
-        # Mock Bedrock to fail twice then succeed
-        mock_response = {
-            'body': MagicMock()
-        }
-        mock_response['body'].read.return_value = json.dumps({
-            'content': [{'text': 'Success after retries'}]
-        }).encode('utf-8')
-        
-        mock_bedrock_client = Mock()
-        mock_bedrock_client.invoke_model.side_effect = [
-            Exception('First failure'),
-            Exception('Second failure'),
-            mock_response
-        ]
-        mock_get_bedrock.return_value = mock_bedrock_client
-        
-        result = handler._call_bedrock_opus('Test prompt')
-        
-        self.assertEqual(result, 'Success after retries')
-        self.assertEqual(mock_bedrock_client.invoke_model.call_count, 3)
-        self.assertEqual(mock_sleep.call_count, 2)  # Two retries
+    @patch('inference.invoke_text')
+    def test_call_summary_model_retry(self, invoke, sleep):
+        from inference import InferenceError
+        invoke.side_effect = [InferenceError('temporary'), InferenceError('temporary'), 'Success after retries']
+        result = handler._call_summary_model('Test prompt')
+        self.assertIn('Success after retries', result)
+        self.assertEqual(invoke.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
     
-    @patch('handler._get_dynamodb')
-    def test_update_job_with_analysis(self, mock_get_dynamodb):
-        """Test updating job record with aggregate analysis."""
-        # Mock DynamoDB
-        mock_table = Mock()
-        mock_dynamodb = Mock()
-        mock_dynamodb.Table.return_value = mock_table
-        mock_get_dynamodb.return_value = mock_dynamodb
-        
+    @patch('handler.get_job_store')
+    def test_update_job_with_analysis(self, get_store):
         handler._update_job_with_analysis('123e4567-e89b-42d3-a456-426614174000', 'Analysis text')
-        
-        # Verify update_item was called
-        mock_table.update_item.assert_called_once()
-        call_args = mock_table.update_item.call_args
-        self.assertEqual(call_args[1]['Key'], {'jobId': '123e4567-e89b-42d3-a456-426614174000'})
-        self.assertIn('aggregateAnalysis', call_args[1]['UpdateExpression'])
+        call = get_store.return_value.update.call_args
+        self.assertEqual(call.args[0], '123e4567-e89b-42d3-a456-426614174000')
+        self.assertEqual(call.args[1]['aggregateAnalysis'], 'Analysis text')
+        self.assertEqual(call.args[1]['analysisStatus'], 'completed')
     
-    @patch('handler._get_s3_client')
-    def test_generate_presigned_url(self, mock_get_s3):
-        """Test presigned URL generation."""
-        # Mock S3 client
-        mock_s3_client = Mock()
-        mock_s3_client.generate_presigned_url.return_value = 'https://presigned-url'
-        mock_get_s3.return_value = mock_s3_client
-        
-        url = handler._generate_presigned_url('results/job-123/output.csv')
-        
-        self.assertEqual(url, 'https://presigned-url')
-        
-        # Verify S3 was called correctly
-        call_args = mock_s3_client.generate_presigned_url.call_args
-        self.assertEqual(call_args[0][0], 'get_object')
-        self.assertEqual(call_args[1]['Params']['Key'], 'results/job-123/output.csv')
+    @patch('handler.get_object_store')
+    def test_generate_presigned_url(self, get_store):
+        get_store.return_value.signed_url.return_value = 'http://localhost/api/download/test'
+        self.assertEqual(handler._generate_presigned_url('results/job/output.csv'), 'http://localhost/api/download/test')
+        get_store.return_value.signed_url.assert_called_once_with('results/job/output.csv', expires=3600)
 
 
 if __name__ == '__main__':

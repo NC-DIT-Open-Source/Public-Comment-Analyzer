@@ -85,6 +85,10 @@ export class ProcessingService {
     );
   }
 
+  cancelJob(jobId: string): Observable<ProcessingResponse> {
+    return this.http.post<ProcessingResponse>(`${this.apiUrl}/process/${jobId}/cancel`, {});
+  }
+
   confirmPreview(jobId: string): Observable<ProcessingResponse> {
     return this.http.post<ProcessingResponse>(
       `${this.apiUrl}/process/${jobId}/preview-confirm`, {}

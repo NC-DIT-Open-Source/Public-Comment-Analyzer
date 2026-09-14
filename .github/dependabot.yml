@@ -1,88 +1,37 @@
 version: 2
 updates:
-  # Backend Lambda dependencies
-  - package-ecosystem: pip
-    directory: /backend/shared
-    schedule:
-      interval: weekly
+  - package-ecosystem: uv
+    directory: /
+    schedule: {interval: weekly}
     open-pull-requests-limit: 5
     labels: [dependencies, backend]
     groups:
-      backend-deps:
-        patterns: ["*"]
-  - package-ecosystem: pip
-    directory: /backend/upload_handler
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    labels: [dependencies, backend]
-    groups:
-      backend-deps:
-        patterns: ["*"]
-  - package-ecosystem: pip
-    directory: /backend/row_processor
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    labels: [dependencies, backend]
-    groups:
-      backend-deps:
-        patterns: ["*"]
-  - package-ecosystem: pip
-    directory: /backend/aggregate_analyzer
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    labels: [dependencies, backend]
-    groups:
-      backend-deps:
-        patterns: ["*"]
-  - package-ecosystem: pip
-    directory: /backend/dashboard_generator
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    labels: [dependencies, backend]
-    groups:
-      backend-deps:
-        patterns: ["*"]
-
-  # Infrastructure (CDK)
-  - package-ecosystem: pip
-    directory: /infrastructure
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    labels: [dependencies, infrastructure]
-    groups:
-      cdk:
-        patterns: ["*"]
-
-  # Frontend
+      python-runtime:
+        patterns: ['*']
   - package-ecosystem: npm
     directory: /frontend
-    schedule:
-      interval: weekly
+    schedule: {interval: weekly}
     open-pull-requests-limit: 10
     labels: [dependencies, frontend]
     groups:
       angular:
-        patterns: ["@angular/*", "@angular-devkit/*"]
-      # Everything else lands in one PR per risk level rather than one per
-      # package — ungrouped updates are what let 26 PRs pile up unreviewed.
+        patterns: ['@angular/*', '@angular-devkit/*']
       production-deps:
         dependency-type: production
         update-types: [minor, patch]
       dev-deps:
         dependency-type: development
         update-types: [minor, patch]
-
-  # GitHub Actions
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
+    schedule: {interval: weekly}
     labels: [dependencies, ci]
     groups:
       actions:
-        patterns: ["*"]
+        patterns: ['*']
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: terraform
+    directory: /infrastructure/terraform/docker
+    schedule: {interval: weekly}

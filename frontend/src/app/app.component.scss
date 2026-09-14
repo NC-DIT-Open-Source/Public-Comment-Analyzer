@@ -62,3 +62,29 @@
     font-style: italic;
   }
 }
+
+.analysis-notice {
+  color: #092940;
+  background: #EEF7FF;
+  border: 1px solid #092940;
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 1rem;
+  top: -5rem;
+  padding: 0.75rem;
+  background: $color-white;
+  color: $color-primary;
+  z-index: 1000;
+  &:focus { top: 1rem; }
+}
+
+@media (max-width: 600px) {
+  .app-header { padding: $spacing-md; }
+  .app-header .header-content { flex-wrap: wrap; gap: $spacing-sm; }
+  .app-header .header-content .logo { max-width: 100%; height: auto; max-height: 50px; }
+  .app-content { padding: $spacing-md; }
+}

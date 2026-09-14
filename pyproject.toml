@@ -1,0 +1,41 @@
+[project]
+name = "public-comment-analyzer"
+version = "0.1.0"
+description = "Provider-neutral, human-reviewed public comment analysis"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "bcrypt>=5.0,<6",
+  "chardet>=7.6,<8",
+  "defusedxml>=0.7.1,<1",
+  "fastapi>=0.116,<1",
+  "langchain>=1,<2",
+  "langgraph>=1,<2",
+  "openpyxl>=3.1.5,<4",
+  "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+openai = ["langchain-openai>=1,<2"]
+anthropic = ["langchain-anthropic>=1,<2"]
+google = ["langchain-google-genai>=4,<5"]
+bedrock = ["langchain-aws>=1,<2"]
+ollama = ["langchain-ollama>=1,<2"]
+providers = [
+  "langchain-openai>=1,<2",
+  "langchain-anthropic>=1,<2",
+  "langchain-google-genai>=4,<5",
+  "langchain-aws>=1,<2",
+  "langchain-ollama>=1,<2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1", "pip-audit>=2.9,<3", "ruff>=0.12,<1"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"

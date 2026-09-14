@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { AppComponent } from './app.component';
 import { AuthService } from './services/auth.service';
 import { of } from 'rxjs';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient, withXhr } from '@angular/common/http';
 
 describe('AppComponent', () => {
@@ -18,9 +19,15 @@ describe('AppComponent', () => {
       imports: [AppComponent],
       providers: [
         provideHttpClient(withXhr()),
+        provideHttpClientTesting(),
         { provide: AuthService, useValue: mockAuthService }
       ]
     }).compileComponents();
+  });
+
+  afterEach(() => {
+    TestBed.inject(HttpTestingController).match('/api/config').forEach(req => req.flush({demoMode: true}));
+    TestBed.inject(HttpTestingController).verify();
   });
 
   it('should create the app', () => {
@@ -40,5 +47,17 @@ describe('AppComponent', () => {
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('h1')?.textContent).toContain('Public Comment Analyzer');
+  });
+
+  it('skips to content without navigating away from the current job', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const main = compiled.querySelector('main')!;
+    spyOn(main, 'focus');
+    const event = new MouseEvent('click', {bubbles: true, cancelable: true});
+    compiled.querySelector('.skip-link')!.dispatchEvent(event);
+    expect(main.focus).toHaveBeenCalled();
+    expect(event.defaultPrevented).toBeTrue();
   });
 });

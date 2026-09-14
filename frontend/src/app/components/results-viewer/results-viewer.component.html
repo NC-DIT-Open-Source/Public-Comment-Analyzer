@@ -4,7 +4,7 @@
     <p>Loading your results...</p>
   </div>
 
-  <div class="error-state" *ngIf="error && !isLoading">
+  <div class="error-state" *ngIf="error && !isLoading" role="alert">
     <mat-card class="error-card">
       <mat-icon>error_outline</mat-icon>
       <h3>Error Loading Results</h3>
@@ -39,7 +39,7 @@
           <mat-icon>analytics</mat-icon>
           Aggregate Analysis
         </mat-card-title>
-        <button mat-icon-button (click)="copyAnalysis()" matTooltip="Copy to clipboard">
+        <button mat-icon-button (click)="copyAnalysis()" aria-label="Copy analysis to clipboard">
           <mat-icon>content_copy</mat-icon>
         </button>
       </mat-card-header>
@@ -74,8 +74,7 @@
                       rows="3"
                       placeholder="e.g., Show me a pie chart of sentiment breakdown and a bar chart comparing the top themes"
                       [disabled]="isDashboardLoading"
-                      maxlength="2000"
-                      aria-label="Describe the charts or insights you want to generate"></textarea>
+                      maxlength="2000"></textarea>
             <mat-hint align="end">{{ dashboardPrompt.length }} / 2000</mat-hint>
           </mat-form-field>
           <button mat-raised-button
@@ -90,7 +89,7 @@
         </div>
 
         <!-- Dashboard Error -->
-        <div class="dashboard-error" *ngIf="dashboardError">
+        <div class="dashboard-error" *ngIf="dashboardError" role="alert">
           <mat-icon>warning</mat-icon>
           <span>{{ dashboardError }}</span>
         </div>
@@ -102,8 +101,16 @@
               <h4 class="chart-title">{{ chart.title }}</h4>
               <p class="chart-description" *ngIf="chart.description">{{ chart.description }}</p>
               <div class="chart-wrapper">
-                <canvas #chartCanvas></canvas>
+                <canvas #chartCanvas role="img" [attr.aria-label]="chart.title + '. Values are available in the chart data table below.'"></canvas>
               </div>
+              <details class="chart-data">
+                <summary>View chart data</summary>
+                <table>
+                  <caption>{{ chart.title }}</caption>
+                  <thead><tr><th scope="col">Label</th><th scope="col" *ngFor="let dataset of chart.config.data.datasets">{{ dataset.label }}</th></tr></thead>
+                  <tbody><tr *ngFor="let label of chart.config.data.labels; let row = index"><th scope="row">{{ label }}</th><td *ngFor="let dataset of chart.config.data.datasets">{{ dataset.data[row] }}</td></tr></tbody>
+                </table>
+              </details>
             </div>
           </div>
 

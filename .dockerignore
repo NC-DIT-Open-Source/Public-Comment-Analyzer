@@ -1,0 +1,35 @@
+# An allow-list keeps credentials, local data, Terraform state, and git history
+# outside the build context even when new private files are added later.
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!backend/
+!backend/**/
+!backend/**/*.py
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/angular.json
+!frontend/tsconfig*.json
+!frontend/src/
+!frontend/src/**
+backend/**/__pycache__/
+backend/**/.pytest_cache/
+backend/**/.venv/
+backend/**/test_*.py
+backend/**/conftest.py
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/local-env.json
+**/.data/
+**/.secrets/
+**/.git/
+**/*.log
+**/test-results/

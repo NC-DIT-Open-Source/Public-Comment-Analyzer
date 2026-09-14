@@ -4,7 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 
 import { JobStatus, ProcessingService } from './processing.service';
 
-const API = 'http://localhost:3000/api';
+const API = '/api';
 const STATUS_URL = (jobId: string) => `${API}/status/${jobId}`;
 
 function statusResponse(overrides: Partial<JobStatus> = {}): JobStatus {

@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
 
-const API = 'http://localhost:3000/api';
+const API = '/api';
 
 describe('authInterceptor', () => {
   let http: HttpClient;
@@ -44,6 +44,14 @@ describe('authInterceptor', () => {
     const req = httpMock.expectOne(`${API}/upload`);
 
     expect(req.request.headers.get('X-Access-Key')).toBe('session-password');
+    req.flush({});
+  });
+
+  it('never sends the password to an external host', () => {
+    authServiceSpy.getAccessKey.and.returnValue('session-password');
+    http.get('https://example.org/api/upload').subscribe();
+    const req = httpMock.expectOne('https://example.org/api/upload');
+    expect(req.request.headers.has('X-Access-Key')).toBeFalse();
     req.flush({});
   });
 

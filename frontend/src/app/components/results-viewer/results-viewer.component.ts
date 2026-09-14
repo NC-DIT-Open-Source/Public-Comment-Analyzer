@@ -12,7 +12,7 @@ import { MatInputModule } from '@angular/material/input';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ResultsService, ResultsResponse } from '../../services/results.service';
 import { DashboardService, ChartDefinition, DashboardResponse } from '../../services/dashboard.service';
-import { marked } from 'marked';
+import { renderAnalysisMarkdown } from '../../services/analysis-markdown';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -101,10 +101,13 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
         this.results = response;
         if (response.aggregateAnalysis) {
           // Render markdown to HTML
-          const html = await marked.parse(response.aggregateAnalysis);
+          const html = await renderAnalysisMarkdown(response.aggregateAnalysis);
           this.renderedAnalysis = this.sanitizer.sanitize(1, html) || '';
           this.isLoading = false;
           this.analysisRetryCount = 0;
+        } else if (response.analysisStatus === 'failed') {
+          this.isLoading = false;
+          this.error = 'The summary could not be generated. Your processed file is still available for download.';
         } else if (response.analysisStatus === 'generating') {
           this.analysisRetryCount++;
           if (this.analysisRetryCount >= this.MAX_ANALYSIS_RETRIES) {
@@ -127,7 +130,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
 
   downloadFile(): void {
     if (this.results?.downloadUrl) {
-      window.open(this.results.downloadUrl, '_blank');
+      window.open(this.results.downloadUrl, '_blank', 'noopener,noreferrer');
       this.snackBar.open('Download started', 'Close', {
         duration: 3000
       });
@@ -161,7 +164,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
         this.dashboardCharts = response.charts || [];
         this.dashboardRawNarrative = response.narrative || '';
         if (this.dashboardRawNarrative) {
-          const html = await marked.parse(this.dashboardRawNarrative);
+          const html = await renderAnalysisMarkdown(this.dashboardRawNarrative);
           this.dashboardNarrative = this.sanitizer.sanitize(1, html) || '';
         }
         this.isDashboardLoading = false;

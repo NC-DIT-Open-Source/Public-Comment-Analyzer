@@ -1,0 +1,73 @@
+name: public-comment-analyzer
+
+services:
+  app:
+    image: public-comment-analyzer:local
+    build:
+      context: .
+      args:
+        PROVIDER_EXTRAS: "${PROVIDER_EXTRAS:-providers}"
+    init: true
+    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    cpus: 2
+    mem_limit: 4g
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    environment:
+      APP_RUNTIME: local
+      APP_DATA_DIR: /data
+      APP_STATIC_DIR: /app/static
+      APP_ALLOWED_HOSTS: "${APP_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}"
+      ACCESS_PASSWORD_HASH_FILE: /run/secrets/access_password_hash
+      LLM_API_KEY_FILE: /run/secrets/llm_api_key
+      LLM_PROVIDER: "${LLM_PROVIDER:?Run the local setup first and select a provider in .env}"
+      LLM_MODEL: "${LLM_MODEL:-}"
+      ROW_MODEL: "${ROW_MODEL:-}"
+      SUMMARY_MODEL: "${SUMMARY_MODEL:-}"
+      DASHBOARD_MODEL: "${DASHBOARD_MODEL:-}"
+      LLM_PROVIDER_OPTIONS: "${LLM_PROVIDER_OPTIONS:-{}}"
+      LLM_ENABLED: "${LLM_ENABLED:-true}"
+      LLM_BUDGET_USD: "${LLM_BUDGET_USD:-1.00}"
+      LLM_INPUT_COST_PER_MILLION: "${LLM_INPUT_COST_PER_MILLION:-}"
+      LLM_OUTPUT_COST_PER_MILLION: "${LLM_OUTPUT_COST_PER_MILLION:-}"
+      LLM_MAX_CALLS: "${LLM_MAX_CALLS:-1000}"
+      LLM_MAX_CONCURRENCY: "${LLM_MAX_CONCURRENCY:-4}"
+      LLM_TIMEOUT_SECONDS: "${LLM_TIMEOUT_SECONDS:-120}"
+      LLM_TEMPERATURE_MODE: "${LLM_TEMPERATURE_MODE:-auto}"
+      LLM_MAX_PROMPT_CHARS: "${LLM_MAX_PROMPT_CHARS:-200000}"
+      LLM_MAX_OUTPUT_TOKENS: "${LLM_MAX_OUTPUT_TOKENS:-4096}"
+      LLM_MAX_OUTPUT_CHARS: "${LLM_MAX_OUTPUT_CHARS:-65536}"
+      LLM_KILL_SWITCH_FILE: /data/STOP_LLM
+      APP_MAX_STORAGE_BYTES: "${APP_MAX_STORAGE_BYTES:-1073741824}"
+      APP_MAX_ACTIVE_JOBS: "${APP_MAX_ACTIVE_JOBS:-8}"
+      APP_JOB_TTL_SECONDS: "${APP_JOB_TTL_SECONDS:-604800}"
+      APP_MAX_REQUESTS_PER_MINUTE: "${APP_MAX_REQUESTS_PER_MINUTE:-180}"
+      APP_MAX_ANALYSES_PER_MINUTE: "${APP_MAX_ANALYSES_PER_MINUTE:-12}"
+      APP_MAX_REQUEST_BYTES: "${APP_MAX_REQUEST_BYTES:-105906176}"
+    volumes:
+      - app_data:/data
+    secrets:
+      - access_password_hash
+      - llm_api_key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+secrets:
+  access_password_hash:
+    file: "${ACCESS_PASSWORD_HASH_SOURCE:-.secrets/access_password_hash}"
+  llm_api_key:
+    file: "${LLM_API_KEY_SOURCE:-.secrets/llm_api_key}"
+
+volumes:
+  app_data:

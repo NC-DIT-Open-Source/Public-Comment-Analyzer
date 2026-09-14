@@ -1,0 +1,174 @@
+name: Validate portable application
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portable-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: '0'
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: '0.12.5'
+          enable-cache: true
+      - run: uv sync --frozen --extra providers
+      - run: uv run --frozen --extra providers python scripts/test-backend.py
+      - run: uv run --frozen --extra providers pip-audit --local
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test -- --watch=false --browsers=ChromeHeadless
+      - run: npm run build:prod
+      - run: npm audit --audit-level=moderate
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TF_VAR_name: public-comment-analyzer-ci
+      TF_VAR_image: public-comment-analyzer:local
+      TF_VAR_password_hash_file: ${{ github.workspace }}/.secrets/access_password_hash
+      TF_VAR_configuration: '{"LLM_PROVIDER":"demo","LLM_MAX_CALLS":"1000","LLM_BUDGET_USD":"1.00"}'
+      TF_VAR_secret_files: '{"LLM_API_KEY_FILE":"${{ github.workspace }}/.secrets/llm_api_key"}'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: docker build --tag public-comment-analyzer:local .
+      # The built image also contains OS packages, outside npm and pip audits.
+      # Keep detailed findings only in runner temp storage, never public artifacts.
+      - name: Check the image for fixable high and critical vulnerabilities
+        id: image_scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        timeout-minutes: 8
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: public-comment-analyzer:local
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          timeout: 5m
+          hide-progress: true
+          format: json
+          output: ${{ runner.temp }}/container-vulnerabilities.json
+          cache-dir: ${{ runner.temp }}/trivy-cache
+        env:
+          TRIVY_DISABLE_TELEMETRY: 'true'
+      - name: Summarize image scan status without disclosing findings
+        if: always() && steps.image_scan.outcome != 'skipped'
+        run: |
+          python3 - <<'PY'
+          from collections import Counter
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path(os.environ['RUNNER_TEMP']) / 'container-vulnerabilities.json'
+          if not report.is_file():
+              raise SystemExit('The image scanner did not produce a report; inspect its setup or execution failure.')
+          counts = Counter()
+          for result in json.loads(report.read_text()).get('Results', []):
+              category = 'OS' if result.get('Class') == 'os-pkgs' else 'Application'
+              for finding in result.get('Vulnerabilities', []):
+                  severity = finding.get('Severity')
+                  if severity in {'HIGH', 'CRITICAL'} and finding.get('FixedVersion'):
+                      counts[(category, severity)] += 1
+          for category in ('OS', 'Application'):
+              for severity in ('HIGH', 'CRITICAL'):
+                  print(f'{category} fixable {severity} findings: {counts[(category, severity)]}')
+          PY
+      - name: Start locked-down offline demo
+        run: |
+          mkdir -m 700 .secrets
+          python3 -c 'import secrets; from pathlib import Path; Path(".secrets/smoke_password").write_text(secrets.token_urlsafe(24))'
+          docker run --rm -i --entrypoint python public-comment-analyzer:local -c 'import bcrypt,sys; print(bcrypt.hashpw(sys.stdin.read().strip().encode(),bcrypt.gensalt()).decode())' < .secrets/smoke_password > .secrets/access_password_hash
+          touch .secrets/llm_api_key
+          chmod 644 .secrets/access_password_hash .secrets/llm_api_key
+          LLM_PROVIDER=demo docker compose up --no-build --wait --wait-timeout 90
+          python3 scripts/smoke-http.py --base-url http://127.0.0.1:8000 --password-file .secrets/smoke_password
+      - name: Stop test container
+        if: always()
+        run: docker compose down
+        env:
+          LLM_PROVIDER: demo
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: '1.15.6'
+      - name: Start the same image through Terraform
+        run: |
+          terraform -chdir=infrastructure/terraform/docker init -backend=false -lockfile=readonly -input=false
+          terraform -chdir=infrastructure/terraform/docker apply -auto-approve -input=false
+          docker inspect "$TF_VAR_name" | python3 -c '
+          import json, sys
+          container = json.load(sys.stdin)[0]
+          assert container["Config"]["User"] == "10001:10001"
+          assert container["HostConfig"]["ReadonlyRootfs"] is True
+          assert container["HostConfig"]["CapDrop"] == ["ALL"]
+          assert container["HostConfig"]["PortBindings"]["8000/tcp"][0]["HostIp"] == "127.0.0.1"
+          mounts = {mount["Destination"]: mount for mount in container["Mounts"]}
+          assert mounts["/data"]["Type"] == "volume" and mounts["/data"]["RW"] is True
+          for path in ("/run/secrets/access_password_hash", "/run/secrets/llm_api_key_file"):
+              assert mounts[path]["Type"] == "bind" and mounts[path]["RW"] is False
+          '
+          python3 scripts/smoke-http.py --base-url http://127.0.0.1:8000 --password-file .secrets/smoke_password
+      - name: Verify Terraform teardown preserves application data
+        run: |
+          if terraform -chdir=infrastructure/terraform/docker plan -destroy -input=false -no-color > "$RUNNER_TEMP/terraform-destroy-check.log" 2>&1; then
+            echo '::error::Terraform allowed destruction of the protected application data volume.'
+            exit 1
+          fi
+          python3 -c 'import os; from pathlib import Path; assert "prevent_destroy" in (Path(os.environ["RUNNER_TEMP"]) / "terraform-destroy-check.log").read_text()'
+          terraform -chdir=infrastructure/terraform/docker destroy -target=docker_container.app -auto-approve -input=false
+          docker volume inspect "${TF_VAR_name}-data" > /dev/null
+      - name: Clean up only the synthetic Terraform test resources
+        if: always()
+        run: |
+          if docker container inspect "$TF_VAR_name" > /dev/null 2>&1; then
+            docker container rm --force "$TF_VAR_name"
+          fi
+          if docker volume inspect "${TF_VAR_name}-data" > /dev/null 2>&1; then
+            docker volume rm "${TF_VAR_name}-data"
+          fi
+
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/docker
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: '1.15.6'
+      - run: terraform fmt -check
+      - run: terraform init -backend=false -lockfile=readonly
+      - run: terraform validate

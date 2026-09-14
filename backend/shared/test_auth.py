@@ -14,6 +14,7 @@ def _bcrypt(pw: str) -> str:
 @pytest.fixture
 def auth(monkeypatch):
     """Re-import auth.py with a clean cache and a clean env per test."""
+    monkeypatch.delenv("ACCESS_PASSWORD_HASH_FILE", raising=False)
     monkeypatch.delenv("ACCESS_PASSWORD_SECRET_NAME", raising=False)
     monkeypatch.delenv("LOCAL_PASSWORD_HASH", raising=False)
     import auth as auth_mod

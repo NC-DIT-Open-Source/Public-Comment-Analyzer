@@ -1,4 +1,4 @@
-"""Unit tests for row processor Lambda handler."""
+"""Unit tests for provider-neutral row processing and API compatibility."""
 
 import json
 import os
@@ -21,6 +21,7 @@ from handler import (
     PREVIEW_MIN_FILE_SIZE
 )
 
+from inference import InferenceError
 
 class TestRowProcessorHandler(unittest.TestCase):
     """Test cases for row processor handler."""
@@ -94,240 +95,65 @@ class TestRowProcessorHandler(unittest.TestCase):
         body = json.loads(response['body'])
         self.assertEqual(body['error']['code'], 'INVALID_ANALYSIS_COLUMN')
     
-    @patch('handler._get_bedrock_runtime')
-    def test_process_single_row_success(self, mock_get_bedrock):
-        """Test successful processing of a single row."""
-        # Mock Bedrock client
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        
-        # Mock Bedrock response
-        mock_response = {
-            'body': MagicMock()
-        }
-        mock_response['body'].read.return_value = json.dumps({
-            'content': [
-                {
-                    'text': json.dumps({
-                        'category': 'pro',
-                        'rating': '6'
-                    })
-                }
-            ]
-        }).encode('utf-8')
-        
-        mock_bedrock.invoke_model.return_value = mock_response
-        
-        row = {'comment': 'This is a test comment'}
-        analysis_columns = [
+    @patch('handler.invoke_text', return_value='{"category":"pro","rating":"6"}')
+    def test_process_single_row_success(self, invoke):
+        result = _process_single_row({'comment': 'This is a test comment'}, [
             {'name': 'category', 'instructions': 'Categorize as pro or against'},
-            {'name': 'rating', 'instructions': 'Rate 1-7'}
-        ]
-        
-        result = _process_single_row(row, analysis_columns)
-        
+            {'name': 'rating', 'instructions': 'Rate 1-7'}])
+        self.assertEqual(result, {'category': 'pro', 'rating': '6'})
+        invoke.assert_called_once()
+        self.assertEqual(invoke.call_args.kwargs['role'], 'row')
+    
+    @patch('handler.time.sleep')
+    @patch('handler.invoke_text')
+    def test_process_single_row_retry_on_failure(self, invoke, sleep):
+        invoke.side_effect = [InferenceError('temporary'), InferenceError('temporary'), '{"category":"pro"}']
+        result = _process_single_row({'comment': 'Test'}, [{'name': 'category', 'instructions': 'Categorize'}])
         self.assertEqual(result['category'], 'pro')
-        self.assertEqual(result['rating'], '6')
-        
-        # Verify Bedrock was called
-        mock_bedrock.invoke_model.assert_called_once()
-        call_args = mock_bedrock.invoke_model.call_args
-        # Check for the new cross-region model ID
-        self.assertIn('claude-haiku', call_args[1]['modelId'])
+        self.assertEqual(invoke.call_count, 3)
     
-    @patch('handler._get_bedrock_runtime')
-    def test_process_single_row_retry_on_failure(self, mock_get_bedrock):
-        """Test that processing retries on failure."""
-        # Mock Bedrock client
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        
-        # First two calls fail, third succeeds
-        mock_bedrock.invoke_model.side_effect = [
-            Exception("Temporary error"),
-            Exception("Temporary error"),
-            {
-                'body': MagicMock(
-                    read=MagicMock(return_value=json.dumps({
-                        'content': [{'text': json.dumps({'category': 'pro'})}]
-                    }).encode('utf-8'))
-                )
-            }
-        ]
-        
-        row = {'comment': 'Test'}
-        analysis_columns = [{'name': 'category', 'instructions': 'Categorize'}]
-        
-        result = _process_single_row(row, analysis_columns)
-        
-        self.assertEqual(result['category'], 'pro')
-        self.assertEqual(mock_bedrock.invoke_model.call_count, 3)
+    @patch('handler.time.sleep')
+    @patch('handler.invoke_text', side_effect=InferenceError('temporary'))
+    def test_process_single_row_max_retries_exceeded(self, invoke, sleep):
+        with self.assertRaises(InferenceError):
+            _process_single_row({'comment': 'Test'}, [{'name': 'category', 'instructions': 'Categorize'}])
+        self.assertEqual(invoke.call_count, 3)
     
-    @patch('handler._get_bedrock_runtime')
-    def test_process_single_row_max_retries_exceeded(self, mock_get_bedrock):
-        """Test that processing fails after max retries."""
-        # Mock Bedrock client
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        
-        # All calls fail
-        mock_bedrock.invoke_model.side_effect = Exception("Persistent error")
-        
-        row = {'comment': 'Test'}
-        analysis_columns = [{'name': 'category', 'instructions': 'Categorize'}]
-        
-        with self.assertRaises(Exception):
-            _process_single_row(row, analysis_columns)
-        
-        self.assertEqual(mock_bedrock.invoke_model.call_count, 3)
-    
-    @patch('handler._get_bedrock_runtime')
-    def test_categorized_column_uses_temperature_zero(self, mock_get_bedrock):
-        """When any categorized column is present, Bedrock is called with temperature=0 for determinism."""
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=json.dumps({
-                'content': [{'text': json.dumps({'support': 'Support'})}]
-            }).encode('utf-8')))
-        }
+    @patch('handler.invoke_text', return_value='{"support":"Support"}')
+    def test_categorized_column_uses_temperature_zero(self, invoke):
+        _process_single_row({'comment': 'Support'}, self._category_columns())
+        self.assertEqual(invoke.call_args.kwargs['temperature'], 0)
 
-        row = {'comment': 'Legalize it'}
-        analysis_columns = [{
-            'name': 'support',
-            'type': 'categorized',
-            'options': [
-                {'value': 'Support', 'description': 'In favor'},
-                {'value': 'Oppose', 'description': 'Against'}
-            ]
-        }]
+    @patch('handler.invoke_text', return_value='{"summary":"A summary."}')
+    def test_open_text_only_does_not_force_temperature(self, invoke):
+        _process_single_row({'comment': 'Test'}, [{'name': 'summary', 'instructions': 'One sentence'}])
+        self.assertIsNone(invoke.call_args.kwargs['temperature'])
 
-        _process_single_row(row, analysis_columns)
+    @patch('handler.invoke_text', side_effect=['{"support":"banana"}', 'Support'])
+    def test_retry_call_uses_temperature_zero(self, invoke):
+        result = _process_single_row({'comment': 'Support'}, self._category_columns())
+        self.assertEqual(result['support'], 'Support')
+        self.assertEqual(invoke.call_count, 2)
+        for call in invoke.call_args_list:
+            self.assertEqual(call.kwargs['temperature'], 0)
 
-        body = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])
-        self.assertEqual(body.get('temperature'), 0,
-                         f"Expected temperature=0 for categorized columns, got body={body}")
-
-    @patch('handler._get_bedrock_runtime')
-    def test_open_text_only_does_not_force_temperature(self, mock_get_bedrock):
-        """Open-text-only runs leave temperature unset so Bedrock uses its default."""
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=json.dumps({
-                'content': [{'text': json.dumps({'summary': 'A summary.'})}]
-            }).encode('utf-8')))
-        }
-
-        row = {'comment': 'Some comment text'}
-        analysis_columns = [{'name': 'summary', 'instructions': 'One sentence.'}]
-
-        _process_single_row(row, analysis_columns)
-
-        body = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])
-        self.assertNotIn('temperature', body,
-                         "Open-text-only runs should not set temperature explicitly")
-
-    @patch('handler._get_bedrock_runtime')
-    def test_retry_call_uses_temperature_zero(self, mock_get_bedrock):
-        """Categorized retry calls always use temperature=0."""
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-
-        # First call returns an unmatched value to trigger retry path; retry returns valid value
-        mock_bedrock.invoke_model.side_effect = [
-            {
-                'body': MagicMock(read=MagicMock(return_value=json.dumps({
-                    'content': [{'text': json.dumps({'support': 'banana'})}]
-                }).encode('utf-8')))
-            },
-            {
-                'body': MagicMock(read=MagicMock(return_value=json.dumps({
-                    'content': [{'text': 'Support'}]
-                }).encode('utf-8')))
-            }
-        ]
-
-        row = {'comment': 'I support this'}
-        analysis_columns = [{
-            'name': 'support',
-            'type': 'categorized',
-            'options': [
-                {'value': 'Support', 'description': 'In favor'},
-                {'value': 'Oppose', 'description': 'Against'}
-            ]
-        }]
-
-        _process_single_row(row, analysis_columns)
-
-        # Verify both calls used temperature=0
-        self.assertGreaterEqual(mock_bedrock.invoke_model.call_count, 2)
-        for call in mock_bedrock.invoke_model.call_args_list:
-            body = json.loads(call[1]['body'])
-            self.assertEqual(body.get('temperature'), 0,
-                             f"All categorized + retry calls should use temperature=0, got body={body}")
-
-    @patch('handler._get_bedrock_runtime')
-    def test_examples_are_rendered_into_prompt(self, mock_get_bedrock):
-        """Few-shot examples on a categorized column appear in the prompt as an <examples> block."""
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=json.dumps({
-                'content': [{'text': json.dumps({'support': 'Support'})}]
-            }).encode('utf-8')))
-        }
-
-        row = {'comment': 'I support legalization'}
-        analysis_columns = [{
-            'name': 'support',
-            'type': 'categorized',
-            'options': [
-                {'value': 'Support', 'description': 'In favor'},
-                {'value': 'Oppose', 'description': 'Against'}
-            ],
-            'examples': [
-                {'commentText': 'Legalize cannabis now!', 'label': 'Support'},
-                {'commentText': 'Cannabis should remain illegal.', 'label': 'Oppose'}
-            ]
-        }]
-
-        _process_single_row(row, analysis_columns)
-
-        prompt = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])['messages'][0]['content']
-        self.assertIn('<examples>', prompt, f"Expected <examples> block in prompt:\n{prompt}")
-        self.assertIn('</examples>', prompt)
+    @patch('handler.invoke_text', return_value='{"support":"Support"}')
+    def test_examples_are_rendered_into_prompt(self, invoke):
+        columns = self._category_columns()
+        columns[0]['examples'] = [{'commentText': 'Legalize cannabis now!', 'label': 'Support'},
+                                  {'commentText': 'Cannabis should remain illegal.', 'label': 'Oppose'}]
+        _process_single_row({'comment': 'Support'}, columns)
+        prompt = invoke.call_args.args[0]
         self.assertIn('Legalize cannabis now!', prompt)
         self.assertIn('Cannabis should remain illegal.', prompt)
-        # Each example should pair the comment text with its expected label
         self.assertIn('Support', prompt)
         self.assertIn('Oppose', prompt)
+        self.assertIn('<analysis_criteria>', prompt)
 
-    @patch('handler._get_bedrock_runtime')
-    def test_no_examples_omits_examples_block(self, mock_get_bedrock):
-        """When no examples are supplied, the prompt does not contain an <examples> block."""
-        mock_bedrock = MagicMock()
-        mock_get_bedrock.return_value = mock_bedrock
-        mock_bedrock.invoke_model.return_value = {
-            'body': MagicMock(read=MagicMock(return_value=json.dumps({
-                'content': [{'text': json.dumps({'support': 'Support'})}]
-            }).encode('utf-8')))
-        }
-
-        row = {'comment': 'Test'}
-        analysis_columns = [{
-            'name': 'support',
-            'type': 'categorized',
-            'options': [
-                {'value': 'Support', 'description': 'In favor'},
-                {'value': 'Oppose', 'description': 'Against'}
-            ]
-        }]
-
-        _process_single_row(row, analysis_columns)
-
-        prompt = json.loads(mock_bedrock.invoke_model.call_args[1]['body'])['messages'][0]['content']
-        self.assertNotIn('<examples>', prompt)
+    @patch('handler.invoke_text', return_value='{"support":"Support"}')
+    def test_no_examples_omits_examples_block(self, invoke):
+        _process_single_row({'comment': 'Support'}, self._category_columns())
+        self.assertNotIn('&quot;examples&quot;', invoke.call_args.args[0])
 
     def test_invalid_example_missing_label_returns_400(self):
         """An example missing a label is rejected at the API layer."""
@@ -379,49 +205,30 @@ class TestRowProcessorHandler(unittest.TestCase):
         body = json.loads(response['body'])
         self.assertEqual(body['error']['code'], 'TOO_MANY_EXAMPLES')
 
-    def test_prompt_includes_all_columns(self):
-        """Test that prompt includes all analysis column instructions."""
-        with patch('handler._get_bedrock_runtime') as mock_get_bedrock:
-            mock_bedrock = MagicMock()
-            mock_get_bedrock.return_value = mock_bedrock
-            
-            mock_response = {
-                'body': MagicMock(
-                    read=MagicMock(return_value=json.dumps({
-                        'content': [{'text': json.dumps({'col1': 'val1', 'col2': 'val2', 'col3': 'val3'})}]
-                    }).encode('utf-8'))
-                )
-            }
-            mock_bedrock.invoke_model.return_value = mock_response
-            
-            row = {'comment': 'Test comment'}
-            analysis_columns = [
-                {'name': 'col1', 'instructions': 'Instruction 1'},
-                {'name': 'col2', 'instructions': 'Instruction 2'},
-                {'name': 'col3', 'instructions': 'Instruction 3'}
-            ]
-            
-            _process_single_row(row, analysis_columns)
-            
-            # Get the prompt from the call
-            call_args = mock_bedrock.invoke_model.call_args
-            body = json.loads(call_args[1]['body'])
-            prompt = body['messages'][0]['content']
-            
-            # Verify all instructions are in prompt
-            self.assertIn('Instruction 1', prompt)
-            self.assertIn('Instruction 2', prompt)
-            self.assertIn('Instruction 3', prompt)
+    @patch('handler.invoke_text', return_value='{"col1":"val1","col2":"val2","col3":"val3"}')
+    def test_prompt_includes_all_columns(self, invoke):
+        columns = [{'name': f'col{i}', 'instructions': f'Instruction {i}'} for i in range(1, 4)]
+        _process_single_row({'comment': 'Test'}, columns)
+        for i in range(1, 4):
+            self.assertIn(f'Instruction {i}', invoke.call_args.args[0])
+
+    @staticmethod
+    def _category_columns():
+        return [{'name': 'support', 'type': 'categorized', 'options': [
+            {'value': 'Support', 'description': 'In favor'}, {'value': 'Oppose', 'description': 'Against'}]}]
 
 
 class TestInitialProcessRoutesToPreview(unittest.TestCase):
     """The initial POST /process call should kick off the preview phase when applicable."""
 
     def setUp(self):
+        self.file_type_patch = patch('handler._determine_file_type', return_value='csv')
+        self.file_type_patch.start()
+        self.addCleanup(self.file_type_patch.stop)
         os.environ['DATA_BUCKET'] = 'test-bucket'
         os.environ['JOBS_TABLE'] = 'test-table'
 
-    @patch('boto3.client')
+    @patch('handler.enqueue_task')
     @patch('handler._create_job_record_quick')
     @patch('handler._get_row_count')
     def test_initial_process_uses_preview_phase_for_categorized_large_file(
@@ -451,10 +258,10 @@ class TestInitialProcessRoutesToPreview(unittest.TestCase):
         response = lambda_handler(event, ctx)
         self.assertEqual(response['statusCode'], 200)
 
-        invoke_payload = json.loads(mock_lambda.invoke.call_args[1]['Payload'])
+        invoke_payload = mock_boto_client.call_args.args[1]
         self.assertEqual(invoke_payload.get('phase'), 'preview')
 
-    @patch('boto3.client')
+    @patch('handler.enqueue_task')
     @patch('handler._create_job_record_quick')
     @patch('handler._get_row_count')
     def test_initial_process_uses_full_phase_for_open_text_only(
@@ -481,7 +288,7 @@ class TestInitialProcessRoutesToPreview(unittest.TestCase):
         response = lambda_handler(event, ctx)
         self.assertEqual(response['statusCode'], 200)
 
-        invoke_payload = json.loads(mock_lambda.invoke.call_args[1]['Payload'])
+        invoke_payload = mock_boto_client.call_args.args[1]
         self.assertEqual(invoke_payload.get('phase'), 'full')
 
 
@@ -541,33 +348,35 @@ class TestPreviewConfirmEndpoint(unittest.TestCase):
         self.assertEqual(response['statusCode'], 400)
         self.assertEqual(json.loads(response['body'])['error']['code'], 'INVALID_FILE_ID')
 
-    @patch('handler._get_dynamodb')
+    @patch('handler.get_job_store')
     def test_returns_404_when_job_does_not_exist(self, mock_dynamo):
         # DynamoDB returns no Item
         mock_table = MagicMock()
         mock_table.get_item.return_value = {}
-        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_table.get.return_value = mock_table.get_item.return_value.get('Item')
+        mock_dynamo.return_value = mock_table
 
         event = self._build_event(str(uuid.uuid4()))
         response = lambda_handler(event, None)
         self.assertEqual(response['statusCode'], 404)
         self.assertEqual(json.loads(response['body'])['error']['code'], 'JOB_NOT_FOUND')
 
-    @patch('handler._get_dynamodb')
+    @patch('handler.get_job_store')
     def test_returns_409_when_job_is_not_in_preview_ready_state(self, mock_dynamo):
         mock_table = MagicMock()
         mock_table.get_item.return_value = {
             'Item': {'jobId': 'abc', 'status': 'completed'}
         }
-        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_table.get.return_value = mock_table.get_item.return_value.get('Item')
+        mock_dynamo.return_value = mock_table
 
         event = self._build_event(str(uuid.uuid4()))
         response = lambda_handler(event, None)
         self.assertEqual(response['statusCode'], 409)
         self.assertEqual(json.loads(response['body'])['error']['code'], 'INVALID_JOB_STATE')
 
-    @patch('boto3.client')
-    @patch('handler._get_dynamodb')
+    @patch('handler.enqueue_task')
+    @patch('handler.get_job_store')
     def test_invokes_row_processor_async_with_confirm_phase(self, mock_dynamo, mock_boto_client):
         job_id = str(uuid.uuid4())
         mock_table = MagicMock()
@@ -586,7 +395,8 @@ class TestPreviewConfirmEndpoint(unittest.TestCase):
                 'contextDescription': 'Test context'
             }
         }
-        mock_dynamo.return_value.Table.return_value = mock_table
+        mock_table.get.return_value = mock_table.get_item.return_value.get('Item')
+        mock_dynamo.return_value = mock_table
         mock_lambda = MagicMock()
         mock_boto_client.return_value = mock_lambda
 
@@ -597,9 +407,9 @@ class TestPreviewConfirmEndpoint(unittest.TestCase):
 
         self.assertEqual(response['statusCode'], 200)
         # Must have invoked self async with phase=confirm
-        invoke_call = mock_lambda.invoke.call_args
-        self.assertEqual(invoke_call[1]['InvocationType'], 'Event')
-        payload = json.loads(invoke_call[1]['Payload'])
+        invoke_call = mock_boto_client.call_args
+        self.assertEqual(invoke_call.args[0], 'row_processor')
+        payload = invoke_call.args[1]
         self.assertTrue(payload.get('asyncProcessing'))
         self.assertEqual(payload.get('phase'), 'confirm')
         self.assertEqual(payload.get('jobId'), job_id)

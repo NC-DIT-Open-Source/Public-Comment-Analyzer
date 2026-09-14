@@ -1,248 +1,70 @@
 # Public Comment Analyzer
 
-> 🧪 **Prototype** — built and operated by NC DIT's Office of AI & Policy (OAIP). Apache 2.0 licensed; you're welcome to fork and deploy your own instance.
+Upload CSV or XLSX comments, define analysis columns, review sample classifications, then download the original data with draft analysis and a summary. The application uses LangChain chat models and a bounded LangGraph workflow. Models have no tools, shell, browser, or access to your job store.
 
-A serverless AWS application that processes CSV/XLSX files of public comments and generates AI per-row analysis plus an aggregate summary using AWS Bedrock (Claude).
+The same Angular interface and API run locally or in a container on a host of your choice. Model provider, model identifiers, credentials, storage runtime, authentication secret, limits and hosting are configured outside the code. No cloud account or paid model is needed to try the workflow.
 
-To run it yourself, deploy your own copy to your own AWS account using the steps below.
+## Try it locally
 
-**Cost note**: Pay-per-token Bedrock plus standard AWS infra. Roughly **$2-5 per 1,000 comments** depending on column count and aggregate complexity. S3 lifecycle deletes uploads after 7 days.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and supported **Node.js 24.15+ in the 24.x series** (also 22.22.3+ in 22.x or 26.x). uv installs Python 3.12 when necessary.
 
-## Quick start
-
-CI/CD is already wired up — every push to `main` auto-deploys to the AWS account whose credentials are in your repo's `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` secrets.
-
-### Prerequisites
-
-- An AWS account you can deploy CloudFormation into.
-- **Bedrock model access** enabled in your target region (default: `us-east-1`) for **Claude Haiku** and **Claude Opus** (Console → Bedrock → Model access → Manage model access).
-- `cdk bootstrap` run once per account/region.
-- Python 3.12+, Node 22+, AWS CLI, AWS CDK CLI, Docker (for SAM local).
-- (Optional) ACM certificate in `us-east-1` if you want a custom domain.
-
-### Setup
-
-```bash
-# 1. AWS profile
-cp .env.example .env             # then edit AWS_PROFILE=<your-profile>
-
-# 2. Frontend deps + Husky pre-push hook
-cd frontend && npm install && cd ..
-
-# 3. CDK bootstrap (once per account/region)
-cdk bootstrap --profile $AWS_PROFILE
-
-# 4. First deploy — push to main and let GitHub Actions deploy,
-#    or run manually:
-cd infrastructure && cdk deploy --context environment=dev --profile $AWS_PROFILE
-```
-
-### First-time login
-
-The CDK stack provisions an empty Secrets Manager secret for the access password. You must seed it after the first deploy. The auth handler uses **bcrypt**, so you need a bcrypt hash — easiest path is the project's own venv (which already pins `bcrypt`):
-
-```bash
-source .venv/bin/activate
-pip install bcrypt    # if not already installed
-
-PWD='choose-a-strong-password'
-HASH=$(python -c "import bcrypt,sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt(12)).decode())" "$PWD")
-
-aws secretsmanager put-secret-value \
-  --secret-id "PublicCommentAnalyzer-AccessPassword-dev" \
-  --secret-string "{\"password_hash\":\"$HASH\"}" \
-  --profile $AWS_PROFILE
-```
-
-Until set, the auth endpoint returns `500 "Auth not configured"` and the app is inaccessible — that's intentional. Save the password in a password manager and rotate by re-running the command above.
-
-### Custom domain (optional)
-
-Add these GitHub repository secrets (Settings → Secrets and variables → Actions):
-
-| Secret | Example |
-|---|---|
-| `DOMAIN_NAME` | `comments.example.com` |
-| `CERTIFICATE_ARN` | `arn:aws:acm:us-east-1:111122223333:certificate/abc-123` |
-| `ALLOWED_ORIGIN` | `https://comments.example.com` |
-
-If unset, the workflow deploys without a custom domain and you access the app at the auto-generated CloudFront URL (visible in the CloudFormation stack outputs).
-
-## Architecture
-
-```mermaid
-graph TD
-    CF[CloudFront] -->|Static Assets| S3F[S3 Frontend]
-    CF -->|API Requests| APIGW[API Gateway]
-    APIGW --> LF[Lambda Functions<br/>Upload / Process / Aggregate / Auth / Status / Dashboard]
-    LF --> S3D[S3 Data]
-    LF --> DDB[DynamoDB Jobs]
-    LF --> BR[Bedrock Claude]
-```
-
-- **Frontend**: Angular 21
-- **Backend**: Python 3.12 Lambdas (Amazon Linux 2023), 500-worker concurrent row processing
-- **Storage**: S3 (data, 7-day lifecycle), DynamoDB (job state)
-- **AI**: AWS Bedrock — Claude Haiku for per-row, Claude Opus for aggregates
-- **Auth**: bcrypt-hashed shared password in Secrets Manager
-- **CDN**: CloudFront with HTTPS, security headers, rate limiting
-
-## Project structure
-
-```
-.
-├── backend/
-│   ├── upload_handler/      # File upload + validation
-│   ├── row_processor/       # Per-row AI analysis (500 concurrent workers)
-│   ├── aggregate_analyzer/  # Aggregate / sentiment summary
-│   ├── dashboard_generator/ # Chart.js dashboard payloads
-│   ├── auth_handler/        # Password validation
-│   ├── status_handler/      # Job status polling
-│   └── shared/              # File parser/writer, DynamoDB client, auth
-├── frontend/                # Angular app
-├── infrastructure/          # AWS CDK (Python)
-└── scripts/                 # Local dev + IAM bootstrap helpers
-```
-
-## Features
-
-- Upload CSV/XLSX files (up to 100 MB, 50,000 rows)
-- Define custom analysis columns with AI instructions
-- Concurrent processing (500 rows at a time)
-- Real-time progress monitoring
-- Download results with original data + AI analysis
-- Aggregate sentiment analysis with markdown rendering
-- Auto-generated chart dashboards
-
-## Local development
-
-Run the full stack on your machine: Lambdas execute in Docker via AWS SAM CLI but still call real AWS services (S3, DynamoDB, Bedrock) using your AWS profile. The account just needs to have been deployed to once already — you don't need to run `cdk bootstrap` or `cdk deploy` yourself.
-
-### Prereqs
-
-- Python 3.12, Node 22+, Docker.
-- AWS CLI, AWS SAM CLI (`brew install aws-sam-cli`), AWS CDK CLI (`npm install -g aws-cdk`).
-- AWS profile with the [permissions listed below](#minimum-aws-permissions), set in `.env` as `AWS_PROFILE=<your-profile>` (`cp .env.example .env` if you haven't).
-
-### One-time setup
-
-```bash
-# 1. Python venv + deps.
-#    backend/shared brings in bcrypt (for hashing the local password).
-#    infrastructure brings in aws-cdk-lib (for `cdk synth`).
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/shared/requirements.txt -r infrastructure/requirements.txt
-
-# 2. Frontend deps + Husky pre-push hook.
-cd frontend && npm install && cd ..
-
-# 3. Local env config.
-cp local-env.example.json local-env.json
-
-#    a. Generate a bcrypt hash of whatever password you want for local access
-#       and paste the resulting $2b$12$… string into local-env.json as LOCAL_PASSWORD_HASH:
-python -c "import bcrypt; print(bcrypt.hashpw(b'pick-any-local-password', bcrypt.gensalt(12)).decode())"
-
-#    b. Replace REPLACE_WITH_AWS_ACCOUNT_ID in local-env.json with your account ID:
-aws sts get-caller-identity --query Account --output text --profile $AWS_PROFILE
-```
-
-### Run
-
-```bash
-# Terminal 1 — local API proxy + SAM Lambda runtime.
-# First run auto-synths the CDK template; later runs reuse the cached one.
+```sh
+git clone https://github.com/NC-DIT-Open-Source/Public-Comment-Analyzer.git
+cd Public-Comment-Analyzer
 bash scripts/start-local.sh
-
-# Terminal 2 — Angular dev server.
-cd frontend && npm start    # http://localhost:4200
 ```
 
-Port 3000 is the proxy the frontend talks to; port 3001 is the SAM Lambda runtime.
+Choose an application password when prompted, then open **http://localhost:8000**. The first run installs locked dependencies and builds the frontend. It creates `.env`, `.secrets/`, and `.data/` locally; these are excluded from git and container build contexts. Subsequent runs preserve your settings and password.
 
-### Day-to-day
+**The initial configuration explicitly selects demo mode.** It returns synthetic sample values to exercise upload, preview, confirmation, download, summary and charts. It does not analyze the meaning of comments. Demo mode is clearly labeled in the interface and output. Try [the synthetic sample](examples/comments.csv); use a categorized column with `Support` and `Concern` as example labels.
 
-- **Backend code edits** are picked up on the next request — no restart needed.
-- **Infra edits** (anything under `infrastructure/`) require re-running `cdk synth` so SAM picks up the new template. `start-local.sh` only auto-synths when the template file is missing, so do this manually after pulling infra changes or editing CDK code:
-  ```bash
-  cd infrastructure && cdk synth --profile $AWS_PROFILE && cd ..
-  ```
-- **Frontend edits** hot-reload via the Angular dev server.
-- `local-env.json` is gitignored. Setting `LOCAL_PASSWORD_HASH` lets the auth handler skip Secrets Manager so your local IAM user does NOT need `secretsmanager:GetSecretValue`.
+For Docker and Terraform, see [deployment](docs/deployment.md). Terraform manages the container on an existing Docker host; it does not provision every cloud's infrastructure for you.
 
-### Minimum AWS permissions
+## Use a model
 
-The IAM principal whose creds you're using locally needs:
+Edit `.env`: set `LLM_PROVIDER` and `LLM_MODEL` to a provider and model/deployment you have access to. Put your API key in `.secrets/llm_api_key` using your editor or secret manager, or configure the provider's workload identity. The shared application password and model API key are different credentials.
 
-- `bedrock:InvokeModel` on the Claude Haiku/Opus model + inference-profile ARNs.
-- Read/write on the deployed `public-comment-analyzer-data-<env>-<account>` S3 bucket.
-- Read/write on the `PublicCommentAnalyzer-Jobs-<env>` DynamoDB table.
-- `ssm:GetParameter` on `/cdk-bootstrap/*` — only if you re-synth the CDK template locally.
+| LangChain provider | Install extra | Configuration |
+| --- | --- | --- |
+| `openai` | `openai` | Model and API key; an OpenAI-compatible endpoint can be set in provider options |
+| `azure_openai` | `openai` | Model/deployment, key or configured identity, endpoint and API version |
+| `anthropic` | `anthropic` | Model and API key |
+| `google_genai` | `google` | Model and key, or the integration's Vertex configuration and application credentials |
+| `bedrock_converse` | `bedrock` | Regional model/inference profile and workload identity |
+| `ollama` | `ollama` | Locally installed model and local server endpoint |
 
-Bedrock model access for Claude Haiku and Claude Opus must also be enabled in your region (Console → Bedrock → Model access).
+The startup script and default container include these integrations. Smaller installs can use `uv sync --frozen --extra openai` (substitute the needed extra). The core does not select a provider or model on your behalf. Other `init_chat_model` integrations can be installed and configured without rewriting analysis code, but each provider/model needs its own compatibility and quality evaluation.
 
-If you're using a dedicated locked-down dev user, pair it with an AWS Budgets action so a leaked credential can't run up unbounded Bedrock spend — Bedrock has no per-principal cost cap.
+`LLM_PROVIDER_OPTIONS` is a JSON object of trusted operator settings, such as `base_url` or `azure_deployment`. It is never accepted from uploaded comments or API callers. See [configuration](docs/configuration.md) for settings, limits and examples without fixed model identifiers.
 
-For test commands and the contribution workflow, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+For real analysis, set `LLM_BUDGET_USD`, `LLM_INPUT_COST_PER_MILLION`, and `LLM_OUTPUT_COST_PER_MILLION` from current provider pricing. Use rates high enough for **every** configured role model. Reservations are conservative and persisted before requests; uncertain calls are still charged against the local cap. Provider-side billing limits remain necessary to cover other applications and pricing/configuration errors.
 
-## Deployment
+## Behavior and review
 
-### Automated (GitHub Actions)
+- CSV and first-sheet XLSX input; row and column order are preserved. Existing empty-cell semantics remain unchanged.
+- Open-text and categorized columns with examples and category validation.
+- Categorized files with at least 50 rows pause after a 20-row preview until a person confirms.
+- Row downloads become available before the aggregate summary finishes. Summary failure does not remove successful row results.
+- Output is a draft decision aid. Review it before policy, legal or other consequential use; changing models can change classifications even with the same prompt.
+- One application password protects one shared workspace. This is not tenant isolation or per-user authorization. Put a hosted deployment behind your identity-aware access layer and TLS.
 
-Every push to `main` runs `.github/workflows/deploy.yml`. It detects which slice of the repo changed (frontend / backend / infra), runs the relevant test suite, and only deploys what's affected. Manual runs are available from the Actions tab via `workflow_dispatch`.
+## Development
 
-To bootstrap repo secrets:
-
-```bash
-./scripts/setup-github-actions.sh
+```sh
+uv sync --frozen --extra providers
+uv run --frozen --extra providers python scripts/test-backend.py
+cd frontend
+npm ci
+npm test -- --watch=false --browsers=ChromeHeadless
+npm run build:prod
 ```
 
-### Manual
+To develop the UI, run the backend on port 8000 and `npm start` in `frontend/`; the development server proxies `/api` to the local backend. Production builds use the same origin for UI and API.
 
-```bash
-# Infrastructure
-cd infrastructure
-cdk deploy --context environment=dev --profile $AWS_PROFILE
+The local runtime persists jobs and queued work in SQLite and stores files on disk. Use a **single application process** per data directory. After an interrupted run, paid work is not automatically replayed: the job is marked failed so an operator can decide whether to retry. Back up the entire data directory consistently and apply a retention policy.
 
-# Frontend (build + sync to S3 + CloudFront invalidation)
-cd ../frontend
-npm run deploy
-```
+## Deployment compatibility
 
-## Performance
+The public edition no longer deploys to a maintainer-owned account when `main` changes. CI validates the portable application. Existing operators should preserve their previous cloud deployment and state in a separately maintained repository before adopting this edition. This is not an in-place CloudFormation-to-Terraform migration, and no existing resources should be destroyed or imported automatically. The [migration guide](docs/migration.md) describes the boundary.
 
-| Rows | Time |
-|---|---|
-| 10 | ~15 seconds |
-| 100 | ~30 seconds |
-| 1,000 | ~2 minutes |
-| 5,000 | ~10 minutes |
-
-500 ThreadPoolExecutor workers per RowProcessor invocation, sized for AWS Bedrock's 1,000 req/min limit at ~50% utilization.
-
-## Customization
-
-The frontend ships with NC DIT branding. To rebrand for your own organization:
-
-- **Logo**: replace `frontend/src/assets/blue-dit-logo.png` and `frontend/src/assets/white-dit-logo.png` (recommended ~200×50 px PNG, transparent background).
-- **Footer**: edit the "Prototype by the Office of AI & Policy" text in `frontend/src/app/app.component.html`.
-- **Colors / typography**: tokens live in `frontend/src/styles.scss` and `frontend/src/styles/_variables.scss`.
-- **Page title / favicon**: `frontend/src/index.html` and `frontend/src/favicon.ico`.
-
-No code changes needed for any of the above.
-
-## Clean up
-
-```bash
-cd infrastructure
-cdk destroy --context environment=dev --profile $AWS_PROFILE
-# Then manually empty + delete the data S3 bucket if you want to be sure
-# nothing keeps accruing storage charges.
-```
-
-## Contributing & security
-
-- See [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution workflow, branch naming, and test commands.
-- Report security vulnerabilities privately — see [SECURITY.md](./SECURITY.md). Don't open a public issue.
-- Licensed under [Apache 2.0](./LICENSE).
+See [security](SECURITY.md), [contributing](CONTRIBUTING.md), [license](LICENSE), and [notice](NOTICE).
