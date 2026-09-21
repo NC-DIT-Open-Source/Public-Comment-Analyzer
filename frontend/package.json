@@ -36,7 +36,7 @@
   "devDependencies": {
     "@angular-devkit/build-angular": "^22.1.8",
     "@angular/cli": "^22.1.8",
-    "@angular/compiler-cli": "^22.1.6",
+    "@angular/compiler-cli": "^22.1.7",
     "@types/jasmine": "~6.0.0",
     "husky": "^9.1.7",
     "istanbul-lib-instrument": "^6.0.3",
@@ -45,7 +45,7 @@
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.2.0",
+    "karma-jasmine-html-reporter": "~2.3.0",
     "typescript": "~6.0.3"
   },
   "overrides": {
