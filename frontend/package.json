@@ -25,7 +25,7 @@
     "@angular/material": "^22.1.6",
     "@angular/platform-browser": "^22.1.6",
     "@angular/platform-browser-dynamic": "^22.1.6",
-    "@angular/router": "^22.1.6",
+    "@angular/router": "^22.2.0",
     "chart.js": "^4.5.1",
     "marked": "^18.0.13",
     "ng2-charts": "^10.0.0",
